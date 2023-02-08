@@ -1,13 +1,13 @@
 from brickpi3 import BrickPi3
 import grovepi
 from MPU9250 import MPU9250
-from numpy import pi, sqrt, dot, zeros, sin, cos
+import numpy as np
 from time import sleep
 
 
 # Convert linear speed to angular speed
 def get_dps(linear_speed, wheel_radius):
-    circumference = 2 * pi * wheel_radius
+    circumference = 2 * np.pi * wheel_radius
     return linear_speed * 360 / circumference
 
 
@@ -19,7 +19,7 @@ def linear_regression(sensor_reading, slope, y_int):
 
 # Get the magnitude of a vector of arbitrary length
 def get_magnitude(*args):
-    return sqrt(dot(args, args))
+    return np.sqrt(np.dot(args, args))
 
 
 class Gears(BrickPi3):
@@ -47,7 +47,8 @@ class Gears(BrickPi3):
         self.ultrasonic_sensor_port = 4  # Assign ultrasonic sensor to port 4
 
         # Map
-        self.map = zeros((8, 16))  # Initialize the map as an 8 x 16 array of zeros
+        self.map = np.zeros((8, 16))  # Initialize the map as an 8 x 16 array of zeros
+        self.map = np.pad(map, [(1, 1), (1, 1)], mode='constant', constant_value=1)
         self.x_position = 0
         self.y_position = 0
         self.orientation = 0
@@ -93,8 +94,8 @@ class Gears(BrickPi3):
     def track_position(self):
         current_distance = self.get_motor_encoder(self.wheel)
         delta = current_distance - self.distance_traveled
-        self.x_position += delta * cos(self.orientation)
-        self.x_position += delta * sin(self.orientation)
+        self.x_position += delta * np.cos(self.orientation)
+        self.x_position += delta * np.sin(self.orientation)
         self.distance_traveled = current_distance
 
     # Parameters
