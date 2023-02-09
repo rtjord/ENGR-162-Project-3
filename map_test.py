@@ -43,9 +43,22 @@ def find_path(map, row, col, path):
         find_path(map, row, col-1, path)
 
 
+def display_map(map):
+    path_map = np.chararray((8, 16))
+    for row in range(8):
+        for col in range(16):
+            if map[row+1][col+1] == 1:
+                print('X', end=' ')
+            else:
+                print(' ', end=' ')
+        print()
+
+
 my_path = []
 path_exists = find_path(map.copy(), 1, 1, my_path)
 print(f'Path exists: {bool(path_exists)}')
 print(f'Number of clear squares adjacent to path: {path_exists}')
 
-print(my_path)
+# print(my_path)
+print('test')
+print('\033[1A', end='\x1b[2K')
