@@ -71,6 +71,7 @@ class Gears(BrickPi3):
         self.x_position = 0
         self.y_position = 0
         self.orientation = 0
+        self.heading = 0
         self.prev_left_encoder = 0
         self.prev_right_encoder = 0
         self.tile_width = 4  # width of a tile on the map (cm)
@@ -112,13 +113,6 @@ class Gears(BrickPi3):
     def turn_right(self):
         self.left_dps = self.max_dps
         self.right_dps = -1 * self.max_dps
-
-    # Set the direction GEARS is facing
-    def set_heading(self, degrees):
-        if self.orientation < degrees:
-            self.turn_left()
-        elif self.orientation > degrees:
-            self.turn_right()
 
     # Do not move
     def stop(self):
@@ -198,6 +192,16 @@ class Gears(BrickPi3):
             print()
         sleep(0.1)
 
+    def set_heading(self, degrees):
+        self.heading = degrees
+
+    # Make GEARS turn until its orientation matches its heading
+    def correct_orientation(self):
+        if self.orientation < self.heading:
+            self.turn_left()
+        elif self.orientation > self.heading:
+            self.turn_right()
+
     # Check if GEARS has completed the mission
     def check_finished(self):
         pass
@@ -220,10 +224,11 @@ class Gears(BrickPi3):
         # If GEARS is on
         if self.on:
             # BASE METHODS
-            self.update_orientation()
-            self.update_position()
-            self.update_map()
-            self.detect_obstacles()
+            self.update_orientation()  # Get the new orientation
+            self.update_position()  # Get the new x and y coordinates
+            self.update_map()  # Mark the position on the map
+            self.correct_orientation()  # Make GEARS turn to face the desired heading
+            self.detect_obstacles()  # Detect obstacles with the ultrasonic sensor
 
             # MODE DEPENDENT METHODS
             if self.mode == 'auto':
