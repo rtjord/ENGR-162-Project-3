@@ -67,7 +67,7 @@ class Gears(BrickPi3):
 
         # Map
         self.map = np.zeros((8, 16))  # Initialize the map as an 8 x 16 array of zeros
-        self.map = np.pad(self.map, [(1, 1), (1, 1)], mode='constant', constant_value=1)
+        self.map = np.pad(self.map, [(1, 1), (1, 1)], mode='constant', constant_value=-1)
         self.x_position = 0
         self.y_position = 0
         self.orientation = 0
@@ -175,22 +175,20 @@ class Gears(BrickPi3):
     # Assumes GEARS started in the lower left hand corner of the map
     def update_map(self):
         # Convert x and y positions to row and column indices for map
-        row = int(len(self.map) - 1 - self.y_position / self.tile_width)
-        col = int(self.x_position / self.tile_width)
+        row = int(len(self.map) - self.y_position / self.tile_width) - 2
+        col = int(self.x_position / self.tile_width) + 1
 
         # Mark the position of gears
         self.map[row][col] = 1
 
     def display_map(self):
-        os.system('cls')
         for row in range(8):
             for col in range(16):
                 if self.map[row+1][col+1] == 1:
-                    print('X')
+                    print('X', end=' ')
                 else:
-                    print(' ')
+                    print(' ', end=' ')
             print()
-        sleep(0.1)
 
     def set_heading(self, degrees):
         self.heading = degrees

@@ -9,9 +9,9 @@ def cast(data_type, var):
     try:
         if data_type == 'str':
             return str(var)
-        elif data_type == 'int':
+        elif 'int' in data_type:
             return int(var)
-        elif data_type == 'float':
+        elif 'float' in data_type:
             return float(var)
         elif data_type == 'bool':
             return var == 'True'
