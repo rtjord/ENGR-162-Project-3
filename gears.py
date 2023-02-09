@@ -71,12 +71,13 @@ class Gears(BrickPi3):
         self.x_position = 0
         self.y_position = 0
         self.orientation = 0
-        self.distance_traveled = 0
+        self.prev_left_encoder = 0
+        self.prev_right_encoder = 0
         self.tile_width = 4  # width of a tile on the map (cm)
 
         # ADDITIONAL ATTRIBUTES
         self.on = False
-        self.buffer_time = buffer_time  # Set time between run cycles (seconds)
+        self.buffer_time = buffer_time  # Set time between cycles (seconds)
         self.mode = mode
         self.mode_list = ['auto', 'manual']
 
@@ -139,23 +140,32 @@ class Gears(BrickPi3):
         # TODO: Convert net rotation of wheels to orientation of GEARS
         self.orientation = 5 * net_rotation
 
-    # Does not account for turns
-    def track_position(self):
-        # Get position of the left motor (measured in degrees)
+    def update_position(self):
+        # Get position of the left and right motors (measured in degrees)
         left_encoder = self.get_motor_encoder(self.left_front_wheel)
+        right_encoder = self.get_motor_encoder(self.left_front_wheel)
 
-        # Convert degrees to cm to get updated distance
-        updated_distance = left_encoder / 360 * self.wheel_circumference
+        # Determine how much the positions of the left and right motors have changed
+        # since the last cycle
+        left_change = left_encoder - self.prev_left_encoder
+        right_change = right_encoder - self.prev_right_encoder
 
-        # Determine how far GEARS has traveled since the last cycle
-        delta = updated_distance - self.distance_traveled
+        # If GEARS is moving in a straight line, the average change is non-zero,
+        # so the position of GEARS will be updated.
+        # If GEARS is turning, the average change is zero, so the position of
+        # GEARS will not change.
+        average_change = (left_change + right_change) / 2
+
+        # Convert degrees to cm to get the linear change in distance
+        delta = average_change / 360 * self.wheel_circumference
 
         # Update x and y position of GEARS
         self.x_position += delta * np.cos(self.orientation)
         self.y_position += delta * np.sin(self.orientation)
 
-        # Record the distance traveled to use for reference on the next cycle
-        self.distance_traveled = updated_distance
+        # Record the encoder values to use for reference on the next cycle
+        self.prev_left_encoder = left_encoder
+        self.prev_left_encoder = right_encoder
 
     # Mark the current position of GEARs on the map
     # Assumes GEARS started in the lower left hand corner of the map
@@ -200,6 +210,10 @@ class Gears(BrickPi3):
         # If GEARS is on
         if self.on:
             # BASE METHODS
+            self.update_orientation()
+            self.update_position()
+            self.update_map()
+            self.detect_obstacles()
 
             # MODE DEPENDENT METHODS
             if self.mode == 'auto':
