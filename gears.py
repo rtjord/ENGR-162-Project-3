@@ -201,6 +201,8 @@ class Gears(BrickPi3):
             self.turn_left()
         elif self.orientation > self.heading:
             self.turn_right()
+        else:
+            self.move_forward()
 
     # Check if GEARS has completed the mission
     def check_finished(self):
