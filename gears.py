@@ -109,7 +109,16 @@ class Gears(BrickPi3):
         self.right_dps = 0
 
     def detect_obstacles(self):
-        pass
+
+        # Read the ultrasonic sensor
+        sensor_reading = grovepi.ultrasonicRead(self.ultrasonic_sensor_port)
+
+        # Convert sensor reading to distance in cm
+        # TODO: Determine parameters for linear regression model
+        obstacle_distance = linear_regression(sensor_reading, 0.4, -0.7)
+        if obstacle_distance < 5:
+            print('Obstacle ahead')
+
 
     def avoid_obstacles(self):
         pass
