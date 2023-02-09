@@ -168,14 +168,15 @@ class Gears(BrickPi3):
         self.map[row][col] = 1
 
     def display_map(self):
-        path_map = np.chararray((8, 16))
+        os.system('cls')
         for row in range(8):
             for col in range(16):
                 if self.map[row+1][col+1] == 1:
-                    path_map[row][col] = 'X'
+                    print('X')
                 else:
-                    path_map[row][col] = ' '
-        print(path_map.decode())
+                    print(' ')
+            print()
+        sleep(0.1)
 
     # Check if GEARS has completed the mission
     def check_finished(self):
