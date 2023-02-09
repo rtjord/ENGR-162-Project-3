@@ -23,18 +23,30 @@ def get_magnitude(*args):
 
 
 class Gears(BrickPi3):
-    def __init__(self, mode='auto', buffer_time=0.02):
+    def __init__(self, mode='auto', max_speed=15, wheel_radius=4, buffer_time=0.02):
 
         # Initialize parent class
         BrickPi3.__init__(self)
 
         # MOTORS AND WHEELS
         # Assign wheels to BrickPi ports
-        # Example shown below
-        self.wheel = self.PORT_A
+        self.left_front_wheel = self.PORT_A
+        self.right_front_wheel = self.PORT_B
+        self.left_back_wheel = self.PORT_C
+        self.right_back_wheel = self.PORT_D
+
+        self.left_wheels = self.left_front_wheel + self.left_back_wheel
+        self.right_wheels = self.right_front_wheel + self.left_back_wheel
+
+        self.all_motors = self.left_wheels + self.right_wheels
 
         # Reset all motor encoders to 0
         self.reset_motor_encoders()
+
+        # Motor Speeds
+        self.max_dps = get_dps(max_speed, wheel_radius)
+        self.left_dps = 0
+        self.right_dps = 0
 
         # SENSORS
         # Magnetic Sensor
@@ -66,23 +78,36 @@ class Gears(BrickPi3):
 
     # Reset all motor encoders to 0
     def reset_motor_encoders(self):
-        pass
+        self.reset_encoder(self.left_front_wheel)
+        self.reset_encoder(self.right_front_wheel)
+        self.reset_encoder(self.left_back_wheel)
+        self.reset_encoder(self.right_back_wheel)
 
     # BASIC MOVEMENT METHODS
+    # Move straight forward at a constant speed
     def move_forward(self):
-        pass
+        self.left_dps = self.max_dps
+        self.right_dps = self.max_dps
 
+    # Move straight backward at a constant speed
     def reverse(self):
-        pass
+        self.left_dps = -1 * self.max_dps
+        self.right_dps = -1 * self.max_dps
 
+    # Turn left in place at a constant speed
     def turn_left(self):
-        pass
+        self.left_dps = -1 * self.max_dps
+        self.right_dps = self.max_dps
 
+    # Turn right in place at a constant speed
     def turn_right(self):
-        pass
+        self.left_dps = self.max_dps
+        self.right_dps = -1 * self.max_dps
 
+    # Do not move
     def stop(self):
-        pass
+        self.left_dps = 0
+        self.right_dps = 0
 
     def detect_obstacles(self):
         pass
@@ -112,7 +137,8 @@ class Gears(BrickPi3):
     # Set position and/or dps for all motors
     # This is the only method that interfaces directly with the motors
     def update_motors(self):
-        pass
+        self.set_motor_dps(self.left_wheels, self.left_dps)
+        self.set_motor_dps(self.right_wheels, self.right_dps)
 
     # Main logic for the rover during the primary demonstration
     # Later method calls have higher priority
