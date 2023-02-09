@@ -113,6 +113,13 @@ class Gears(BrickPi3):
         self.left_dps = self.max_dps
         self.right_dps = -1 * self.max_dps
 
+    # Set the direction GEARS is facing
+    def set_heading(self, degrees):
+        if self.orientation < degrees:
+            self.turn_left()
+        elif self.orientation > degrees:
+            self.turn_right()
+
     # Do not move
     def stop(self):
         self.left_dps = 0
@@ -139,6 +146,9 @@ class Gears(BrickPi3):
         # the orientation of GEARS should be a constant multiple of the net rotation of the wheels
         # TODO: Convert net rotation of wheels to orientation of GEARS
         self.orientation = 5 * net_rotation
+
+        # Keep orientation between 0 and 359 degrees
+        self.orientation %= 360
 
     def update_position(self):
         # Get position of the left and right motors (measured in degrees)
