@@ -1,29 +1,29 @@
 from brickpi3 import BrickPi3
 import grovepi
 from MPU9250 import MPU9250
-from numpy import pi, sqrt, dot, zeros, sin, cos
+import numpy as np
 from time import sleep
+import os
 
 
 # Convert linear speed to angular speed
 def get_dps(linear_speed, wheel_radius):
-    circumference = 2 * pi * wheel_radius
+    circumference = 2 * np.pi * wheel_radius
     return linear_speed * 360 / circumference
 
 
 # Convert sensor reading to measurement using linear regression model
-# Default settings for converting ultrasonic sensor reading to cm
 def linear_regression(sensor_reading, slope, y_int):
     return slope * sensor_reading + y_int
 
 
 # Get the magnitude of a vector of arbitrary length
 def get_magnitude(*args):
-    return sqrt(dot(args, args))
+    return np.sqrt(np.dot(args, args))
 
 
 class Gears(BrickPi3):
-    def __init__(self, mode='auto', max_speed=15, wheel_radius=4, buffer_time=0.02):
+    def __init__(self, mode='auto', max_speed=15, wheel_radius=4, track_width=4, buffer_time=0.02):
 
         # Initialize parent class
         BrickPi3.__init__(self)
@@ -43,6 +43,13 @@ class Gears(BrickPi3):
         # Reset all motor encoders to 0
         self.reset_motor_encoders()
 
+        # Radius of wheels (assumes all wheels have the same radius)
+        self.wheel_radius = wheel_radius
+        self.wheel_circumference = 2 * np.pi * self.wheel_radius  # cm
+
+        # Distance between two wheels on the same axle
+        self.track_width = track_width
+
         # Motor Speeds
         self.max_dps = get_dps(max_speed, wheel_radius)
         self.left_dps = 0
@@ -59,11 +66,13 @@ class Gears(BrickPi3):
         self.ultrasonic_sensor_port = 4  # Assign ultrasonic sensor to port 4
 
         # Map
-        self.map = zeros((8, 16))  # Initialize the map as an 8 x 16 array of zeros
+        self.map = np.zeros((8, 16))  # Initialize the map as an 8 x 16 array of zeros
+        self.map = np.pad(self.map, [(1, 1), (1, 1)], mode='constant', constant_value=1)
         self.x_position = 0
         self.y_position = 0
         self.orientation = 0
         self.distance_traveled = 0
+        self.tile_width = 4  # width of a tile on the map (cm)
 
         # ADDITIONAL ATTRIBUTES
         self.on = False
@@ -114,20 +123,59 @@ class Gears(BrickPi3):
     def avoid_obstacles(self):
         pass
 
-    # Possible implementation shown. Need to decide on wheel design.
-    def track_position(self):
-        current_distance = self.get_motor_encoder(self.wheel)
-        delta = current_distance - self.distance_traveled
-        self.x_position += delta * cos(self.orientation)
-        self.x_position += delta * sin(self.orientation)
-        self.distance_traveled = current_distance
+    def update_orientation(self):
 
-    # Parameters
-    # 1. x: x-coordinate of GEARS
-    # 2. y: y-coordinate of GEARS
-    # Description: Update the map with the position of GEARS
-    def update_map(self, x, y):
-        self.map[x][y] = 'X'
+        # Position of the left wheels in degrees
+        left_encoder = self.get_motor_encoder(self.left_front_wheel)
+
+        # Position of the right wheels in degrees
+        right_encoder = self.get_motor_encoder(self.right_front_wheel)
+
+        # net rotation of the wheels
+        # not necessarily the net rotation of GEARS
+        net_rotation = right_encoder - left_encoder
+
+        # the orientation of GEARS should be a constant multiple of the net rotation of the wheels
+        # TODO: Convert net rotation of wheels to orientation of GEARS
+        self.orientation = 5 * net_rotation
+
+    # Does not account for turns
+    def track_position(self):
+        # Get position of the left motor (measured in degrees)
+        left_encoder = self.get_motor_encoder(self.left_front_wheel)
+
+        # Convert degrees to cm to get updated distance
+        updated_distance = left_encoder / 360 * self.wheel_circumference
+
+        # Determine how far GEARS has traveled since the last cycle
+        delta = updated_distance - self.distance_traveled
+
+        # Update x and y position of GEARS
+        self.x_position += delta * np.cos(self.orientation)
+        self.y_position += delta * np.sin(self.orientation)
+
+        # Record the distance traveled to use for reference on the next cycle
+        self.distance_traveled = updated_distance
+
+    # Mark the current position of GEARs on the map
+    # Assumes GEARS started in the lower left hand corner of the map
+    def update_map(self):
+        # Convert x and y positions to row and column indices for map
+        row = int(len(self.map) - 1 - self.y_position / self.tile_width)
+        col = int(self.x_position / self.tile_width)
+
+        # Mark the position of gears
+        self.map[row][col] = 1
+
+    def display_map(self):
+        path_map = np.chararray((8, 16))
+        for row in range(8):
+            for col in range(16):
+                if self.map[row+1][col+1] == 1:
+                    path_map[row][col] = 'X'
+                else:
+                    path_map[row][col] = ' '
+        print(path_map.decode())
 
     # Check if GEARS has completed the mission
     def check_finished(self):
