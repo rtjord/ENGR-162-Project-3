@@ -5,6 +5,11 @@ import numpy as np
 from time import sleep
 import os
 
+GEARS = 2
+PATH = 1
+UNKNOWN = 0
+OBSTACLE = -1
+
 
 # Convert linear speed to angular speed
 def get_dps(linear_speed, wheel_radius):
@@ -67,7 +72,7 @@ class Gears(BrickPi3):
 
         # Map
         self.map = np.zeros((8, 16))  # Initialize the map as an 8 x 16 array of zeros
-        self.map = np.pad(self.map, [(1, 1), (1, 1)], mode='constant', constant_value=-1)
+        self.map = np.pad(self.map, [(1, 1), (1, 1)], mode='constant', constant_value=OBSTACLE)
         self.x_position = 0
         self.y_position = 0
         self.orientation = 0
@@ -128,8 +133,15 @@ class Gears(BrickPi3):
         # Convert sensor reading to distance in cm
         # TODO: Determine parameters for linear regression model
         obstacle_distance = linear_regression(sensor_reading, 0.4, -0.7)
-        if obstacle_distance < 5:
-            print('Obstacle ahead')
+        if obstacle_distance < self.tile_width:
+            if 315 < self.orientation <= 359 or 0 <= self.orientation < 45:
+                self.update_map(self.x_position + self.tile_width, self.y_position, OBSTACLE)
+            elif 45 <= self.orientation < 135:
+                self.update_map(self.x_position, self.y_position + self.tile_width, OBSTACLE)
+            elif 135 <= self.orientation < 225:
+                self.update_map(self.x_position - self.tile_width, self.y_position, OBSTACLE)
+            else:
+                self.update_map(self.x_position, self.y_position + self.tile_width, OBSTACLE)
 
     def detect_hazards(self):
         pass
@@ -192,16 +204,17 @@ class Gears(BrickPi3):
 
     # Mark the current position of GEARs on the map
     # Assumes GEARS started in the lower left hand corner of the map
-    def update_map(self):
+    def update_map(self, x_pos, y_pos, mark):
         # Convert x and y positions to row and column indices for map
-        row = int(len(self.map) - self.y_position / self.tile_width) - 2
-        col = int(self.x_position / self.tile_width) + 1
+        row = int(len(self.map) - y_pos / self.tile_width) - 2
+        col = int(x_pos / self.tile_width) + 1
 
-        # Replace previous GEARS mark with path mark
-        self.map[self.map == 2] = 1
+        # If marking the position of GEARS
+        if mark == 2:
+            # Replace previous GEARS mark with path mark
+            self.map[self.map == 2] = 1
 
-        # Mark the new position of GEARS
-        self.map[row][col] = 2
+        self.map[row][col] = mark
 
     def display_map(self):
         for row in range(8):
@@ -245,12 +258,14 @@ class Gears(BrickPi3):
 
         # If GEARS is on
         if self.on:
+
             # BASE METHODS
             self.update_orientation()  # Get the new orientation
             self.update_position()  # Get the new x and y coordinates
-            self.update_map()  # Mark the position on the map
+            self.update_map(self.x_position, self.y_position, 2)  # Mark the position on the map
             self.correct_orientation()  # Make GEARS turn to face the desired heading
             self.detect_obstacles()  # Detect obstacles with the ultrasonic sensor
+            self.check_finished()
 
             # MODE DEPENDENT METHODS
             if self.mode == 'auto':
