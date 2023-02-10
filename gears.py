@@ -67,16 +67,18 @@ class Gears(BrickPi3):
 
         # Map
         self.map = np.zeros((8, 16))  # Initialize the map as an 8 x 16 array of zeros
-        self.map = np.pad(self.map, [(1, 1), (1, 1)], mode='constant', constant_value=1)
+        self.map = np.pad(self.map, [(1, 1), (1, 1)], mode='constant', constant_value=-1)
         self.x_position = 0
         self.y_position = 0
         self.orientation = 0
-        self.distance_traveled = 0
+        self.heading = 0
+        self.prev_left_encoder = 0
+        self.prev_right_encoder = 0
         self.tile_width = 4  # width of a tile on the map (cm)
 
         # ADDITIONAL ATTRIBUTES
         self.on = False
-        self.buffer_time = buffer_time  # Set time between run cycles (seconds)
+        self.buffer_time = buffer_time  # Set time between cycles (seconds)
         self.mode = mode
         self.mode_list = ['auto', 'manual']
 
@@ -148,44 +150,66 @@ class Gears(BrickPi3):
         # TODO: Convert net rotation of wheels to orientation of GEARS
         self.orientation = 5 * net_rotation
 
-    # Does not account for turns
-    def track_position(self):
-        # Get position of the left motor (measured in degrees)
+        # Keep orientation between 0 and 359 degrees
+        self.orientation %= 360
+
+    def update_position(self):
+        # Get position of the left and right motors (measured in degrees)
         left_encoder = self.get_motor_encoder(self.left_front_wheel)
+        right_encoder = self.get_motor_encoder(self.left_front_wheel)
 
-        # Convert degrees to cm to get updated distance
-        updated_distance = left_encoder / 360 * self.wheel_circumference
+        # Determine how much the positions of the left and right motors have changed
+        # since the last cycle
+        left_change = left_encoder - self.prev_left_encoder
+        right_change = right_encoder - self.prev_right_encoder
 
-        # Determine how far GEARS has traveled since the last cycle
-        delta = updated_distance - self.distance_traveled
+        # If GEARS is moving in a straight line, the average change is non-zero,
+        # so the position of GEARS will be updated.
+        # If GEARS is turning, the average change is zero, so the position of
+        # GEARS will not change.
+        average_change = (left_change + right_change) / 2
+
+        # Convert degrees to cm to get the linear change in distance
+        delta = average_change / 360 * self.wheel_circumference
 
         # Update x and y position of GEARS
         self.x_position += delta * np.cos(self.orientation)
         self.y_position += delta * np.sin(self.orientation)
 
-        # Record the distance traveled to use for reference on the next cycle
-        self.distance_traveled = updated_distance
+        # Record the encoder values to use for reference on the next cycle
+        self.prev_left_encoder = left_encoder
+        self.prev_left_encoder = right_encoder
 
     # Mark the current position of GEARs on the map
     # Assumes GEARS started in the lower left hand corner of the map
     def update_map(self):
         # Convert x and y positions to row and column indices for map
-        row = int(len(self.map) - 1 - self.y_position / self.tile_width)
-        col = int(self.x_position / self.tile_width)
+        row = int(len(self.map) - self.y_position / self.tile_width) - 2
+        col = int(self.x_position / self.tile_width) + 1
 
         # Mark the position of gears
         self.map[row][col] = 1
 
     def display_map(self):
-        os.system('cls')
         for row in range(8):
             for col in range(16):
                 if self.map[row+1][col+1] == 1:
-                    print('X')
+                    print('X', end=' ')
                 else:
-                    print(' ')
+                    print(' ', end=' ')
             print()
-        sleep(0.1)
+
+    def set_heading(self, degrees):
+        self.heading = degrees
+
+    # Make GEARS turn until its orientation matches its heading
+    def correct_orientation(self):
+        if self.orientation < self.heading:
+            self.turn_left()
+        elif self.orientation > self.heading:
+            self.turn_right()
+        else:
+            self.move_forward()
 
     # Check if GEARS has completed the mission
     def check_finished(self):
@@ -209,6 +233,11 @@ class Gears(BrickPi3):
         # If GEARS is on
         if self.on:
             # BASE METHODS
+            self.update_orientation()  # Get the new orientation
+            self.update_position()  # Get the new x and y coordinates
+            self.update_map()  # Mark the position on the map
+            self.correct_orientation()  # Make GEARS turn to face the desired heading
+            self.detect_obstacles()  # Detect obstacles with the ultrasonic sensor
 
             # MODE DEPENDENT METHODS
             if self.mode == 'auto':
