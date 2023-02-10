@@ -75,6 +75,7 @@ class Gears(BrickPi3):
         self.prev_left_encoder = 0
         self.prev_right_encoder = 0
         self.tile_width = 4  # width of a tile on the map (cm)
+        self.hazards = {'type': [], 'parameter': [], 'value': [], 'x': [], 'y': []}
 
         # ADDITIONAL ATTRIBUTES
         self.on = False
@@ -130,6 +131,15 @@ class Gears(BrickPi3):
         if obstacle_distance < 5:
             print('Obstacle ahead')
 
+    def detect_hazards(self):
+        pass
+
+    def record_hazard(self, hazard_type, parameter, value, x, y):
+        self.hazards['type'].append(hazard_type)
+        self.hazards['parameter'].append(parameter)
+        self.hazards['value'].append(value)
+        self.hazards['x'].append(x)
+        self.hazards['y'].append(y)
 
     def avoid_obstacles(self):
         pass
