@@ -178,8 +178,11 @@ class Gears(BrickPi3):
         row = int(len(self.map) - self.y_position / self.tile_width) - 2
         col = int(self.x_position / self.tile_width) + 1
 
-        # Mark the position of gears
-        self.map[row][col] = 1
+        # Replace previous GEARS mark with path mark
+        self.map[self.map == 2] = 1
+
+        # Mark the new position of GEARS
+        self.map[row][col] = 2
 
     def display_map(self):
         for row in range(8):
