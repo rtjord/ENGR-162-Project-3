@@ -28,7 +28,7 @@ def get_magnitude(*args):
 
 
 class Gears(BrickPi3):
-    def __init__(self, mode='auto', max_speed=5, wheel_radius=4, track_width=4, buffer_time=0.05):
+    def __init__(self, mode='auto', max_speed=5, wheel_radius=4, track_width=4, buffer_time=0.01):
 
         # Initialize parent class
         BrickPi3.__init__(self)
@@ -110,20 +110,32 @@ class Gears(BrickPi3):
         self.left_dps = -1 * self.max_dps
         self.right_dps = -1 * self.max_dps
 
-    # Turn left in place at a constant speed
     def turn_left(self):
-        self.left_dps = -1 * self.max_dps
-        self.right_dps = self.max_dps
+        self.heading += 90
 
-    # Turn right in place at a constant speed
     def turn_right(self):
-        self.left_dps = self.max_dps
-        self.right_dps = -1 * self.max_dps
+        self.heading -= 90
+
+    # Make GEARS turn until its orientation matches its heading
+    def correct_orientation(self):
+        # Use proportional control to minimize the difference between the orientation
+        # and desired heading of GEARS
+        error = self.heading - self.orientation
+        if abs(error) < 0.5:
+            return
+
+        dps = 5 * error
+        # limit the dps of the motors
+        dps = min(self.max_dps, max(-1 * self.max_dps, dps))
+        # Set the motor dps values
+        self.left_dps = -1 * dps
+        self.right_dps = dps
 
     # Do not move
     def stop(self):
         self.left_dps = 0
         self.right_dps = 0
+        self.heading = self.orientation
 
     def detect_obstacles(self):
 
@@ -164,16 +176,12 @@ class Gears(BrickPi3):
         # Position of the right wheels in degrees
         right_encoder = self.get_motor_encoder(self.right_front_wheel)
 
-        # net rotation of the wheels
-        # not necessarily the net rotation of GEARS
-        net_rotation = 0.1 * (right_encoder - left_encoder)
+        # the orientation of GEARS should be a constant multiple of the difference in motor encoder values
+        # TODO: Convert motor encoder difference of wheels to orientation of GEARS
+        self.orientation = 0.1 * (right_encoder - left_encoder)
 
-        # the orientation of GEARS should be a constant multiple of the net rotation of the wheels
-        # TODO: Convert net rotation of wheels to orientation of GEARS
-        self.orientation = net_rotation
-
-        # Keep orientation between 0 and 359 degrees
-        self.orientation %= 360
+        # # Keep orientation between 0 and 359 degrees
+        # self.orientation %= 360
 
     def update_position(self):
         # Get position of the left and right motors (measured in degrees)
@@ -228,14 +236,7 @@ class Gears(BrickPi3):
             print()
 
     def set_heading(self, degrees):
-        self.heading = degrees
-
-    # Make GEARS turn until its orientation matches its heading
-    def correct_orientation(self):
-        if self.orientation < self.heading:
-            self.turn_left()
-        elif self.orientation > self.heading:
-            self.turn_right()
+        self.heading = degrees % 360
 
     # Check if GEARS has completed the mission
     def check_finished(self):
