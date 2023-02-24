@@ -28,7 +28,7 @@ def get_magnitude(*args):
 
 
 class Gears(BrickPi3):
-    def __init__(self, mode='auto', max_speed=15, wheel_radius=4, track_width=4, buffer_time=0.02):
+    def __init__(self, mode='auto', max_speed=5, wheel_radius=4, track_width=4, buffer_time=0.05):
 
         # Initialize parent class
         BrickPi3.__init__(self)
@@ -41,7 +41,7 @@ class Gears(BrickPi3):
         self.right_back_wheel = self.PORT_D
 
         self.left_wheels = self.left_front_wheel + self.left_back_wheel
-        self.right_wheels = self.right_front_wheel + self.left_back_wheel
+        self.right_wheels = self.right_front_wheel + self.right_back_wheel
 
         self.all_motors = self.left_wheels + self.right_wheels
 
@@ -70,9 +70,9 @@ class Gears(BrickPi3):
         # Ultrasonic Sensor
         self.ultrasonic_sensor_port = 4  # Assign ultrasonic sensor to port 4
 
-        # Map
+        # MAP
         self.map = np.zeros((8, 16))  # Initialize the map as an 8 x 16 array of zeros
-        self.map = np.pad(self.map, [(1, 1), (1, 1)], mode='constant', constant_value=OBSTACLE)
+        self.map = np.pad(self.map, [(1, 1), (1, 1)], mode='constant', constant_values=OBSTACLE)
         self.x_position = 0
         self.y_position = 0
         self.orientation = 0
@@ -166,11 +166,11 @@ class Gears(BrickPi3):
 
         # net rotation of the wheels
         # not necessarily the net rotation of GEARS
-        net_rotation = right_encoder - left_encoder
+        net_rotation = 0.1 * (right_encoder - left_encoder)
 
         # the orientation of GEARS should be a constant multiple of the net rotation of the wheels
         # TODO: Convert net rotation of wheels to orientation of GEARS
-        self.orientation = 5 * net_rotation
+        self.orientation = net_rotation
 
         # Keep orientation between 0 and 359 degrees
         self.orientation %= 360
@@ -200,7 +200,7 @@ class Gears(BrickPi3):
 
         # Record the encoder values to use for reference on the next cycle
         self.prev_left_encoder = left_encoder
-        self.prev_left_encoder = right_encoder
+        self.prev_right_encoder = right_encoder
 
     # Mark the current position of GEARs on the map
     # Assumes GEARS started in the lower left hand corner of the map
@@ -208,6 +208,8 @@ class Gears(BrickPi3):
         # Convert x and y positions to row and column indices for map
         row = int(len(self.map) - y_pos / self.tile_width) - 2
         col = int(x_pos / self.tile_width) + 1
+        row = max(1, min(len(self.map)-2, row))
+        col = max(1, min(len(self.map[0])-2, col))
 
         # If marking the position of GEARS
         if mark == 2:
@@ -234,8 +236,6 @@ class Gears(BrickPi3):
             self.turn_left()
         elif self.orientation > self.heading:
             self.turn_right()
-        else:
-            self.move_forward()
 
     # Check if GEARS has completed the mission
     def check_finished(self):
