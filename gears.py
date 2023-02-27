@@ -147,15 +147,20 @@ class Gears(BrickPi3):
         # Convert sensor reading to distance in cm
         # TODO: Determine parameters for linear regression model
         obstacle_distance = linear_regression(sensor_reading, 0.4, -0.7)
+
+        orientation = self.orientation % 360
+        if orientation < 0:
+            orientation += 360
+
         if obstacle_distance < self.tile_width:
-            if 315 < self.orientation <= 359 or 0 <= self.orientation < 45:
+            if 315 < orientation <= 359 or 0 <= orientation < 45:
                 self.update_map(self.x_position + self.tile_width, self.y_position, OBSTACLE)
-            elif 45 <= self.orientation < 135:
+            elif 45 <= orientation < 135:
                 self.update_map(self.x_position, self.y_position + self.tile_width, OBSTACLE)
-            elif 135 <= self.orientation < 225:
+            elif 135 <= orientation < 225:
                 self.update_map(self.x_position - self.tile_width, self.y_position, OBSTACLE)
             else:
-                self.update_map(self.x_position, self.y_position + self.tile_width, OBSTACLE)
+                self.update_map(self.x_position, self.y_position - self.tile_width, OBSTACLE)
 
     def detect_hazards(self):
         pass
@@ -214,33 +219,33 @@ class Gears(BrickPi3):
 
     def expand_map(self, x_pos, y_pos):
 
-        # If gears is to the right of the map
-        if x_pos >= (self.x_max + self.tile_width):
+        # If mark is to the right of the map
+        if round(x_pos) > self.x_max:
 
             # Add a column of zeroes to the left side of the map
             self.map = np.pad(self.map, [(0, 0), (0, 1)], mode='constant', constant_values=UNKNOWN)
 
             # Update the max x position
-            self.x_max = x_pos
+            self.x_max += self.tile_width
 
-        # If gears is to the left of the map
-        if x_pos <= (self.x_min - self.tile_width):
+        # If mark is to the left of the map
+        if round(x_pos) < self.x_min:
 
             # Add a column of zeroes to the right side of hte map
             self.map = np.pad(self.map, [(0, 0), (1, 0)], mode='constant', constant_values=UNKNOWN)
 
             # Update the min x position
-            self.x_min = x_pos
+            self.x_min -= self.tile_width
 
-        # If gears is above the map
-        if y_pos >= (self.y_max + self.tile_width):
+        # If mark is above the map
+        if round(y_pos) > self.y_max:
             self.map = np.pad(self.map, [(1, 0), (0, 0)], mode='constant', constant_values=UNKNOWN)
-            self.y_max = y_pos
+            self.y_max += self.tile_width
 
         # If gears is below the map
-        if y_pos <= (self.y_min - self.tile_width):
+        if round(y_pos) < self.y_min:
             self.map = np.pad(self.map, [(0, 1), (0, 0)], mode='constant', constant_values=UNKNOWN)
-            self.y_min = y_pos
+            self.y_min -= self.tile_width
 
     # Mark the current position of GEARs on the map
     # Assumes GEARS started in the lower left hand corner of the map
@@ -255,8 +260,8 @@ class Gears(BrickPi3):
         start_col = start_col[0]
 
         # Get the current row and col indices of GEARS
-        current_row = int(start_row - y_pos / self.tile_width)
-        current_col = int(start_col + x_pos / self.tile_width)
+        current_row = round(start_row - y_pos / self.tile_width)
+        current_col = round(start_col + x_pos / self.tile_width)
 
         current_row = max(0, min(len(self.map)-1, current_row))
         current_col = max(0, min(len(self.map[0])-1, current_col))
