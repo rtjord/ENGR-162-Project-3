@@ -28,22 +28,17 @@ def get_magnitude(*args):
 
 
 class Gears(BrickPi3):
-    def __init__(self, mode='auto', max_speed=5, wheel_radius=4, track_width=4, buffer_time=0.01):
+    def __init__(self, mode='auto', max_speed=15, wheel_radius=2, track_width=4, buffer_time=0.01):
 
         # Initialize parent class
         BrickPi3.__init__(self)
 
         # MOTORS AND WHEELS
         # Assign wheels to BrickPi ports
-        self.left_front_wheel = self.PORT_A
-        self.right_front_wheel = self.PORT_B
-        self.left_back_wheel = self.PORT_C
-        self.right_back_wheel = self.PORT_D
+        self.left_wheel = self.PORT_D
+        self.right_wheel = self.PORT_A
 
-        self.left_wheels = self.left_front_wheel + self.left_back_wheel
-        self.right_wheels = self.right_front_wheel + self.right_back_wheel
-
-        self.all_motors = self.left_wheels + self.right_wheels
+        self.all_motors = self.left_wheel + self.right_wheel
 
         # Reset all motor encoders to 0
         self.reset_motor_encoders()
@@ -62,13 +57,13 @@ class Gears(BrickPi3):
 
         # SENSORS
         # Magnetic Sensor
-        self.imu = MPU9250()  # IMU (magnetic sensor)
-        self.magnet_magnitude = 1  # magnitude of IMU magnet reading
-        self.magnet_zero_count = 0  # number of consecutive zeros read by IMU
-        self.magnet_detected = False  # Is the IMU currently detecting a magnet (reading 0)?
+        # self.imu = MPU9250()  # IMU (magnetic sensor)
+        # self.magnet_magnitude = 1  # magnitude of IMU magnet reading
+        # self.magnet_zero_count = 0  # number of consecutive zeros read by IMU
+        # self.magnet_detected = False  # Is the IMU currently detecting a magnet (reading 0)?
 
         # Ultrasonic Sensor
-        self.ultrasonic_sensor_port = 4  # Assign ultrasonic sensor to port 4
+        self.ultrasonic_sensor_port = 2  # Assign ultrasonic sensor to port 2
 
         # MAP
         self.map = np.zeros((8, 16))  # Initialize the map as an 8 x 16 array of zeros
@@ -94,19 +89,19 @@ class Gears(BrickPi3):
 
     # Reset all motor encoders to 0
     def reset_motor_encoders(self):
-        self.reset_encoder(self.left_front_wheel)
-        self.reset_encoder(self.right_front_wheel)
-        self.reset_encoder(self.left_back_wheel)
-        self.reset_encoder(self.right_back_wheel)
+        self.reset_encoder(self.left_wheel)
+        self.reset_encoder(self.right_wheel)
 
     # BASIC MOVEMENT METHODS
     # Move straight forward at a constant speed
     def move_forward(self):
+        self.orientation = round(self.orientation / 90) * 90
         self.left_dps = self.max_dps
         self.right_dps = self.max_dps
 
     # Move straight backward at a constant speed
     def reverse(self):
+        self.orientation = round(self.orientation / 90) * 90
         self.left_dps = -1 * self.max_dps
         self.right_dps = -1 * self.max_dps
 
@@ -121,7 +116,7 @@ class Gears(BrickPi3):
         # Use proportional control to minimize the difference between the orientation
         # and desired heading of GEARS
         error = self.heading - self.orientation
-        if abs(error) < 0.5:
+        if abs(error) < 2:
             return
 
         dps = 5 * error
@@ -135,7 +130,6 @@ class Gears(BrickPi3):
     def stop(self):
         self.left_dps = 0
         self.right_dps = 0
-        self.heading = self.orientation
 
     def detect_obstacles(self):
 
@@ -171,22 +165,22 @@ class Gears(BrickPi3):
     def update_orientation(self):
 
         # Position of the left wheels in degrees
-        left_encoder = self.get_motor_encoder(self.left_front_wheel)
+        left_encoder = self.get_motor_encoder(self.left_wheel)
 
         # Position of the right wheels in degrees
-        right_encoder = self.get_motor_encoder(self.right_front_wheel)
+        right_encoder = self.get_motor_encoder(self.right_wheel)
 
         # the orientation of GEARS should be a constant multiple of the difference in motor encoder values
         # TODO: Convert motor encoder difference of wheels to orientation of GEARS
-        self.orientation = 0.1 * (right_encoder - left_encoder)
+        self.orientation = 0.2 * (right_encoder - left_encoder)
 
         # # Keep orientation between 0 and 359 degrees
         # self.orientation %= 360
 
     def update_position(self):
         # Get position of the left and right motors (measured in degrees)
-        left_encoder = self.get_motor_encoder(self.left_front_wheel)
-        right_encoder = self.get_motor_encoder(self.left_front_wheel)
+        left_encoder = self.get_motor_encoder(self.left_wheel)
+        right_encoder = self.get_motor_encoder(self.right_wheel)
 
         # Determine how much the positions of the left and right motors have changed
         # since the last cycle
@@ -203,8 +197,8 @@ class Gears(BrickPi3):
         delta = average_change / 360 * self.wheel_circumference
 
         # Update x and y position of GEARS
-        self.x_position += delta * np.cos(self.orientation)
-        self.y_position += delta * np.sin(self.orientation)
+        self.x_position += delta * np.cos(np.radians(self.orientation))
+        self.y_position += delta * np.sin(np.radians(self.orientation))
 
         # Record the encoder values to use for reference on the next cycle
         self.prev_left_encoder = left_encoder
@@ -245,8 +239,8 @@ class Gears(BrickPi3):
     # Set position and/or dps for all motors
     # This is the only method that interfaces directly with the motors
     def update_motors(self):
-        self.set_motor_dps(self.left_wheels, self.left_dps)
-        self.set_motor_dps(self.right_wheels, self.right_dps)
+        self.set_motor_dps(self.left_wheel, self.left_dps)
+        self.set_motor_dps(self.right_wheel, self.right_dps)
 
     # Main logic for the rover during the primary demonstration
     # Later method calls have higher priority
