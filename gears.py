@@ -29,7 +29,7 @@ def get_magnitude(*args):
 
 
 class Gears(BrickPi3):
-    def __init__(self, mode='auto', max_speed=15, wheel_radius=2, track_width=4, buffer_time=0.01):
+    def __init__(self, mode='auto', max_speed=5, wheel_radius=2, track_width=4, buffer_time=0.01):
 
         # Initialize parent class
         BrickPi3.__init__(self)
@@ -74,6 +74,8 @@ class Gears(BrickPi3):
         self.x_max = 0
         self.y_min = 0
         self.y_max = 0
+        self.row = 0
+        self.col = 0
         self.orientation = 0
         self.heading = 0
         self.turning = False
@@ -164,9 +166,6 @@ class Gears(BrickPi3):
             else:
                 self.update_map(self.x_position, self.y_position - self.tile_width, OBSTACLE)
 
-    def detect_hazards(self):
-        pass
-
     def record_hazard(self, hazard_type, parameter, value, x, y):
         self.hazards['type'].append(hazard_type)
         self.hazards['parameter'].append(parameter)
@@ -174,8 +173,29 @@ class Gears(BrickPi3):
         self.hazards['x'].append(x)
         self.hazards['y'].append(y)
 
+    def update_map_pos(self):
+        try:
+            r, c = np.where(self.map == 2)
+            self.row = r[0]
+            self.col = c[0]
+        except IndexError:
+            r, c = np.where(self.map == 3)
+            self.row = r[0]
+            self.col = c[0]
+
     def avoid_obstacles(self):
-        pass
+        r = round(self.row - np.sin(np.radians(self.heading)))
+        c = round(self.col + np.cos(np.radians(self.heading)))
+        try:
+            front_mark = self.map[r][c]
+        except IndexError:
+            front_mark = UNKNOWN
+
+        if r < 0 or c < 0:
+            front_mark = UNKNOWN
+
+        if front_mark == OBSTACLE or front_mark == PATH:
+            self.turn_left()
 
     def update_orientation(self):
 
@@ -319,16 +339,17 @@ class Gears(BrickPi3):
             self.update_orientation()  # Get the new orientation of GEARS
             self.update_position()  # Get the new x and y coordinates of GEARS
             self.update_map(self.x_position, self.y_position, 2)  # Mark the position of GEARS on the map
-            self.correct_orientation()  # Make GEARS turn to face the desired heading
+            self.update_map_pos()  # Get the new row and column of GEARS on the map
             self.detect_obstacles()  # Detect obstacles with the ultrasonic sensor and mark them on the map
-            self.check_finished()
 
             # MODE DEPENDENT METHODS
             if self.mode == 'auto':
-                pass
+                self.move_forward()
+                self.avoid_obstacles()  # Turn left if facing an obstacle
             elif self.mode == 'manual':
                 pass
 
+            self.correct_orientation()  # Make GEARS turn to face the desired heading
         # If GEARS is off
         else:
             self.stop()
