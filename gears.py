@@ -134,7 +134,7 @@ class Gears(BrickPi3):
             # Set the motor dps values
             self.left_dps = -1 * dps
             self.right_dps = dps
-            if abs(error) < 2:
+            if abs(error) < 1:
                 self.stop()
                 self.turning = False
 
@@ -213,6 +213,9 @@ class Gears(BrickPi3):
         # self.orientation %= 360
 
     def update_position(self):
+        # If GEARS is turning, do not update its position
+        if self.turning:
+            return
         # Get position of the left and right motors (measured in degrees)
         left_encoder = self.get_motor_encoder(self.left_wheel)
         right_encoder = self.get_motor_encoder(self.right_wheel)
@@ -222,18 +225,14 @@ class Gears(BrickPi3):
         left_change = left_encoder - self.prev_left_encoder
         right_change = right_encoder - self.prev_right_encoder
 
-        # If GEARS is moving in a straight line, the average change is non-zero,
-        # so the position of GEARS will be updated.
-        # If GEARS is turning, the average change is zero, so the position of
-        # GEARS will not change.
         average_change = (left_change + right_change) / 2
 
         # Convert degrees to cm to get the linear change in distance
         delta = average_change / 360 * self.wheel_circumference
 
         # Update x and y position of GEARS
-        self.x_position += delta * np.cos(np.radians(self.orientation))
-        self.y_position += delta * np.sin(np.radians(self.orientation))
+        self.x_position += delta * np.cos(np.radians(self.heading))
+        self.y_position += delta * np.sin(np.radians(self.heading))
 
         # Record the encoder values to use for reference on the next cycle
         self.prev_left_encoder = left_encoder
