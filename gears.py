@@ -106,10 +106,12 @@ class Gears(BrickPi3):
         self.right_dps = -1 * self.max_dps
 
     def turn_left(self):
-        self.heading += 90
+        if not self.turning:
+            self.heading += 90
 
     def turn_right(self):
-        self.heading -= 90
+        if not self.turning:
+            self.heading -= 90
 
     # Make GEARS turn until its orientation matches its heading
     def correct_orientation(self):
