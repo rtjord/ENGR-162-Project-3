@@ -287,6 +287,10 @@ class Gears(BrickPi3):
     def set_heading(self, degrees):
         self.heading = degrees % 360
 
+    def point_turn(self):
+        self.heading = float(input('Enter the desired angle: '))
+        self.turning = True
+
     # Check if GEARS has completed the mission
     def check_finished(self):
         pass
