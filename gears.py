@@ -55,25 +55,17 @@ class Gears(BrickPi3):
         self.right_dps = 0
 
         # SENSORS
-        # Magnetic Sensor
-        # self.imu = MPU9250()  # IMU (magnetic sensor)
-        # self.magnet_magnitude = 1  # magnitude of IMU magnet reading
-        # self.magnet_zero_count = 0  # number of consecutive zeros read by IMU
-        # self.magnet_detected = False  # Is the IMU currently detecting a magnet (reading 0)?
-
         # Ultrasonic Sensor
         self.ultrasonic_sensor_port = 2  # Assign ultrasonic sensor to port 2
 
         # MAP
         self.map = np.array([[START]])  # Initialize the map
-        self.start_row = 0  # row index of start position
-        self.start_col = 0  # column index of start position
-        self.x_position = 0  # x position in cm
-        self.y_position = 0  # y position in cm
-        self.x_min = 0  # left edge of map (cm)
-        self.x_max = 0  # right edge of map (cm)
-        self.y_min = 0  # bottom edge of map (cm)
-        self.y_max = 0  # top edge of map (cm)
+        self.origin_row = 0  # row of start position on map array
+        self.origin_col = 0  # column of start position on map array
+        self.x_position = 0  # cm right of the origin
+        self.y_position = 0  # cm left of the origin
+        self.x_coordinate = 0 # tile widths right of origin
+        self.y_coordinate = 0 # tile widths above origin
         self.row = 0  # current row of GEARS on map
         self.col = 0  # current column of GEARS on map
         self.orientation = 0  # actual orientation (degrees)
@@ -150,16 +142,6 @@ class Gears(BrickPi3):
         self.hazards['x'].append(x)
         self.hazards['y'].append(y)
 
-    def update_map_pos(self):
-        try:
-            r, c = np.where(self.map == 2)
-            self.row = r[0]
-            self.col = c[0]
-        except IndexError:
-            r, c = np.where(self.map == 3)
-            self.row = r[0]
-            self.col = c[0]
-
     def detect_obstacles(self):
 
         # Read the ultrasonic sensor
@@ -175,13 +157,19 @@ class Gears(BrickPi3):
 
         if obstacle_distance < self.tile_width:
             if 315 < orientation <= 359 or 0 <= orientation < 45:
-                self.update_map(self.x_position + self.tile_width, self.y_position, OBSTACLE)
+                x_coordinate, y_coordinate = self.position_to_coordinates(self.x_position + self.tile_width,
+                                                                          self.y_position)
             elif 45 <= orientation < 135:
-                self.update_map(self.x_position, self.y_position + self.tile_width, OBSTACLE)
+                x_coordinate, y_coordinate = self.position_to_coordinates(self.x_position,
+                                                                          self.y_position + self.tile_width)
             elif 135 <= orientation < 225:
-                self.update_map(self.x_position - self.tile_width, self.y_position, OBSTACLE)
+                x_coordinate, y_coordinate = self.position_to_coordinates(self.x_position - self.tile_width,
+                                                                          self.y_position)
             else:
-                self.update_map(self.x_position, self.y_position - self.tile_width, OBSTACLE)
+                x_coordinate, y_coordinate = self.position_to_coordinates(self.x_position,
+                                                                          self.y_position - self.tile_width)
+
+            self.update_map(x_coordinate, y_coordinate, OBSTACLE)
 
     def avoid_obstacles(self):
         r = round(self.row - np.sin(np.radians(self.heading)))
@@ -197,54 +185,57 @@ class Gears(BrickPi3):
         if front_mark == OBSTACLE or front_mark == PATH:
             self.turn_left()
 
-    def get_map_indices(self, x_pos, y_pos):
-        on_map = self.x_min <= x_pos <= self.x_max and self.y_min <= y_pos <= self.y_max
-        if not on_map:
-            print('Error. Position is not on map')
-            return -1, -1
+    def expand_map(self, row, col):
+        num_rows = len(self.map)
+        num_cols = len(self.map[0])
 
-        row = self.start_row - int(x_pos / self.tile_width)
-        col = self.start_col + int(y_pos / self.tile_width)
+        # If mark is to the right of the map
+        if col >= num_cols:
+
+            # Add columns of zeroes to the right side of the map
+            for i in range(col - num_cols + 1):
+                self.map = np.pad(self.map, [(0, 0), (0, 1)], mode='constant', constant_values=UNKNOWN)
+
+        # If mark is to the left of the map
+        if col < 0:
+
+            # Add columns of zeroes to the left side of the map
+            for i in range(-1 * col):
+                self.map = np.pad(self.map, [(0, 0), (1, 0)], mode='constant', constant_values=UNKNOWN)
+                self.origin_col += 1
+
+        # If mark is above the map
+        if row < 0:
+
+            # Add rows of zeroes to the top of the map
+            for i in range(-1 * row):
+                self.map = np.pad(self.map, [(1, 0), (0, 0)], mode='constant', constant_values=UNKNOWN)
+                self.origin_row += 1
+
+        # If mark is below the map
+        if row >= num_rows:
+
+            # Add rows of zeroes to the bottom of the map
+            for i in range(row - num_rows + 1):
+                self.map = np.pad(self.map, [(0, 1), (0, 0)], mode='constant', constant_values=UNKNOWN)
+
+    # Convert position (cm) to coordinates (tile widths)
+    def position_to_coordinates(self, x_position, y_position):
+        x_coordinate = int(x_position / self.tile_width)
+        y_coordinate = int(y_position / self.tile_width)
+
+        return x_coordinate, y_coordinate
+
+    # Convert coordinates (tile widths) to row and column indices
+    def coordinates_to_indices(self, x_coordinate, y_coordinate):
+        # Get the current row and col indices of GEARS
+        row = int(self.origin_row - y_coordinate)
+        col = int(self.origin_col + x_coordinate)
 
         return row, col
 
-    def expand_map(self, x_pos, y_pos):
-
-        # If mark is to the right of the map
-        if round(x_pos) > self.x_max:
-            num_cols = round((x_pos - self.x_max) / self.tile_width)
-            for i in range(num_cols):
-                # Add zeroes to the left side of the map
-                self.map = np.pad(self.map, [(0, 0), (0, 1)], mode='constant', constant_values=UNKNOWN)
-
-                # Update the max x position
-                self.x_max += self.tile_width
-
-        # If mark is to the left of the map
-        if round(x_pos) < self.x_min:
-            num_cols = round((self.x_min - x_pos) / self.tile_width)
-            # Add a column of zeroes to the right side of hte map
-            for i in range(num_cols):
-                self.map = np.pad(self.map, [(0, 0), (1, 0)], mode='constant', constant_values=UNKNOWN)
-
-                # Update the min x position
-                self.x_min -= self.tile_width
-
-        # If mark is above the map
-        if round(y_pos) > self.y_max:
-            num_rows = round((y_pos - self.y_max) / self.tile_width)
-            for i in range(num_rows):
-                self.map = np.pad(self.map, [(1, 0), (0, 0)], mode='constant', constant_values=UNKNOWN)
-                self.y_max += self.tile_width
-
-        # If gears is below the map
-        if round(y_pos) < self.y_min:
-            num_rows = round((self.y_min - y_pos) / self.tile_width)
-            for i in range(num_rows):
-                self.map = np.pad(self.map, [(0, 1), (0, 0)], mode='constant', constant_values=UNKNOWN)
-                self.y_min -= self.tile_width
-
     def update_position(self):
+
         # If GEARS is turning, do not update its position
         if self.turning:
             return
@@ -270,6 +261,15 @@ class Gears(BrickPi3):
         self.prev_left_encoder = left_encoder
         self.prev_right_encoder = right_encoder
 
+        # Convert position to coordinates
+        self.x_coordinate, self.y_coordinate = self.position_to_coordinates(self.x_position, self.y_position)
+
+        # Convert coordinates to indices
+        self.row, self.col = self.coordinates_to_indices(self.x_coordinate, self.y_coordinate)
+
+        # Mark GEARS on map
+        self.update_map(self.x_coordinate, self.y_coordinate, GEARS)
+
     def update_orientation(self):
 
         # Position of the left wheels in degrees
@@ -287,31 +287,25 @@ class Gears(BrickPi3):
 
     # Mark the current position of GEARs on the map
     # Assumes GEARS started in the lower left hand corner of the map
-    def update_map(self, x_pos, y_pos, mark):
+    def update_map(self, x_coordinate, y_coordinate, mark):
+        row, col = self.coordinates_to_indices(x_coordinate, y_coordinate)
 
         # If the marking is off the map, expand the map
-        self.expand_map(x_pos, y_pos)
+        self.expand_map(row, col)
 
-        # Get the row and column indices of the start position
-        start_row, start_col = np.where(self.map == START)
-        self.start_row = start_row[0]
-        self.start_col = start_col[0]
+        # Get new indices after expanding map
+        row, col = self.coordinates_to_indices(x_coordinate, y_coordinate)
 
-        # Get the current row and col indices of GEARS
-        current_row = int(start_row - y_pos / self.tile_width)
-        current_col = int(start_col + x_pos / self.tile_width)
-
-        current_row = max(0, min(len(self.map)-1, current_row))
-        current_col = max(0, min(len(self.map[0])-1, current_col))
+        # Do not overwrite origin
+        if row == self.origin_row and col == self.origin_col:
+            return
 
         # If marking the position of GEARS
         if mark == GEARS:
             # Replace previous GEARS mark with path mark
             self.map[self.map == GEARS] = PATH
 
-        # Do not overwrite initial position marking
-        if current_row != start_row or current_col != start_col:
-            self.map[current_row][current_col] = mark
+        self.map[row][col] = mark
 
     def display_map(self):
         for row in range(8):
@@ -333,12 +327,9 @@ class Gears(BrickPi3):
         x_coordinate = int(input('Enter the x-coordinate: '))
         y_coordinate = int(input('Enter the y-coordinate: '))
 
-        x_pos = x_coordinate * self.tile_width
-        y_pos = y_coordinate * self.tile_width
-
         self.map[self.map == WAYPOINT] = UNKNOWN  # Clear previous waypoint
 
-        self.update_map(x_pos, y_pos, WAYPOINT)
+        self.update_map(x_coordinate, y_coordinate, WAYPOINT)
 
     def goto_point(self):
         x_coordinate = int(input('Enter the x-coordinate: '))
@@ -368,9 +359,7 @@ class Gears(BrickPi3):
 
             # BASE METHODS
             self.update_orientation()  # Get the new orientation of GEARS
-            self.update_position()  # Get the new x and y coordinates of GEARS
-            self.update_map(self.x_position, self.y_position, 2)  # Mark the position of GEARS on the map
-            self.update_map_pos()  # Get the new row and column of GEARS on the map
+            self.update_position()  # Get the new position of GEARS
             self.detect_obstacles()  # Detect obstacles with the ultrasonic sensor and mark them on the map
 
             # MODE DEPENDENT METHODS
