@@ -340,6 +340,10 @@ class Gears(BrickPi3):
 
         self.update_map(x_pos, y_pos, WAYPOINT)
 
+    def goto_point(self):
+        x_coordinate = int(input('Enter the x-coordinate: '))
+        y_coordinate = int(input('Enter the y-coordinate: '))
+
     # Check if GEARS has completed the mission
     def check_finished(self):
         pass
