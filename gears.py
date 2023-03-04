@@ -30,7 +30,7 @@ def get_magnitude(*args):
 
 
 class Gears(BrickPi3):
-    def __init__(self, mode='auto', max_speed=5, wheel_radius=2, buffer_time=0.01):
+    def __init__(self, mode='auto', max_speed=5, wheel_radius=3, buffer_time=0.01):
 
         # Initialize parent class
         BrickPi3.__init__(self)
@@ -73,14 +73,14 @@ class Gears(BrickPi3):
         self.turning = False  # Is GEARS currently executing a turn?
         self.prev_left_encoder = 0  # value of left encoder from previous cycle
         self.prev_right_encoder = 0  # value of right encoder from previous cycle
-        self.tile_width = 4  # width of a tile on the map (cm)
+        self.tile_width = 40  # width of a tile on the map (cm)
         self.hazards = {'type': [], 'parameter': [], 'value': [], 'x': [], 'y': []}  # Dictionary of hazards
 
         # ADDITIONAL ATTRIBUTES
         self.on = False  # Is GEARS on?
         self.buffer_time = buffer_time  # time between cycles (seconds)
         self.mode = mode  # current mode
-        self.mode_list = ['auto', 'manual']  # list of known modes
+        self.mode_list = ['auto', 'manual', 'waypoint']  # list of known modes
 
     # Reset a single motor encoder to 0
     def reset_encoder(self, port):
@@ -94,13 +94,11 @@ class Gears(BrickPi3):
     # BASIC MOVEMENT METHODS
     # Move straight forward at a constant speed
     def move_forward(self):
-        self.orientation = round(self.orientation / 90) * 90
         self.left_dps = self.max_dps
         self.right_dps = self.max_dps
 
     # Move straight backward at a constant speed
     def reverse(self):
-        self.orientation = round(self.orientation / 90) * 90
         self.left_dps = -1 * self.max_dps
         self.right_dps = -1 * self.max_dps
 
@@ -149,13 +147,13 @@ class Gears(BrickPi3):
 
         # Convert sensor reading to distance in cm
         # TODO: Determine parameters for linear regression model
-        obstacle_distance = linear_regression(sensor_reading, 0.4, -0.7)
+        obstacle_distance = linear_regression(sensor_reading, 0.9423, 2.2666)
 
         orientation = self.orientation % 360
         if orientation < 0:
             orientation += 360
 
-        if obstacle_distance < self.tile_width:
+        if obstacle_distance < self.tile_width / 2:
             if 315 < orientation <= 359 or 0 <= orientation < 45:
                 x_coordinate, y_coordinate = self.position_to_coordinates(self.x_position + self.tile_width,
                                                                           self.y_position)
@@ -234,6 +232,12 @@ class Gears(BrickPi3):
 
         return row, col
 
+    def indices_to_coordinates(self, row, col):
+        y_coordinate = int(self.origin_row - row)
+        x_coordinate = int(col - self.origin_col)
+
+        return x_coordinate, y_coordinate
+
     def update_position(self):
 
         # If GEARS is turning, do not update its position
@@ -280,7 +284,7 @@ class Gears(BrickPi3):
 
         # the orientation of GEARS should be a constant multiple of the difference in motor encoder values
         # TODO: Convert motor encoder difference of wheels to orientation of GEARS
-        self.orientation = 0.2 * (right_encoder - left_encoder)
+        self.orientation = 0.137 * (right_encoder - left_encoder)
 
         # # Keep orientation between 0 and 359 degrees
         # self.orientation %= 360
@@ -331,9 +335,38 @@ class Gears(BrickPi3):
 
         self.update_map(x_coordinate, y_coordinate, WAYPOINT)
 
-    def goto_point(self):
-        x_coordinate = int(input('Enter the x-coordinate: '))
-        y_coordinate = int(input('Enter the y-coordinate: '))
+    def coordinates_to_position(self, x_coordinate, y_coordinate):
+        return self.tile_width * x_coordinate, self.tile_width * y_coordinate
+
+    def goto_waypoint(self):
+        r, c = np.where(self.map == WAYPOINT)
+
+        try:
+            row = r[0]
+            col = c[0]
+
+        # Either there was no waypoint or GEARS reached the waypoint and
+        # the waypoint mark was replaced with the GEARS mark
+        except IndexError:
+            # Stop
+            self.stop()
+            # Exit
+            return
+
+        # Get the coordinates of the waypoint
+        x_coordinate, y_coordinate = self.indices_to_coordinates(row, col)
+        x_position, y_position = self.coordinates_to_position(x_coordinate, y_coordinate)
+        # Set the heading to face the waypoint
+        delta_x = x_position - self.x_coordinate
+        delta_y = y_position - self.y_coordinate
+        self.heading = np.degrees(np.arctan2(delta_y, delta_x))
+        if abs(self.orientation - self.heading) > 1:
+            self.turning = True
+
+        # Move toward the waypoint
+        # correct_orientation should be called later to ensure GEARS is facing the
+        # correct direction
+        self.move_forward()
 
     # Check if GEARS has completed the mission
     def check_finished(self):
@@ -360,12 +393,14 @@ class Gears(BrickPi3):
             # BASE METHODS
             self.update_orientation()  # Get the new orientation of GEARS
             self.update_position()  # Get the new position of GEARS
-            self.detect_obstacles()  # Detect obstacles with the ultrasonic sensor and mark them on the map
 
             # MODE DEPENDENT METHODS
             if self.mode == 'auto':
+                self.detect_obstacles()  # Detect obstacles with the ultrasonic sensor and mark them on the map
                 self.move_forward()
                 self.avoid_obstacles()  # Turn left if facing an obstacle
+            if self.mode == 'waypoint':
+                self.goto_waypoint()
             elif self.mode == 'manual':
                 pass
 
