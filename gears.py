@@ -1,16 +1,20 @@
 from brickpi3 import BrickPi3
 import grovepi
-from MPU9250 import MPU9250
 import numpy as np
 from time import sleep
-import os
 
 GEARS = 2
 PATH = 1
 UNKNOWN = 0
-OBSTACLE = -1
+WALL = -1
 ORIGIN = 3
 WAYPOINT = 4
+CLEAR = 5
+
+FRONT = 0
+LEFT = 90
+BACK = 180
+RIGHT = 270
 
 
 # Convert linear speed to angular speed
@@ -24,7 +28,7 @@ def linear_regression(sensor_reading, slope, y_int):
     return slope * sensor_reading + y_int
 
 
-# Return the distance to the nearest obstacle detected by the ultrasonic sensor
+# Return the distance to the nearest wall detected by the ultrasonic sensor
 def read_ultrasonic(port):
     sensor_reading = grovepi.ultrasonicRead(port)
     distance = linear_regression(sensor_reading, 0.9423, 2.2666)
@@ -151,51 +155,38 @@ class Gears(BrickPi3):
         self.hazards['x'].append(x)
         self.hazards['y'].append(y)
 
-    def detect_obstacles(self):
-        # Get obstacle distance
+    def get_neighbor_coordinates(self, direction):
+        x_position = self.x_position + self.tile_width * np.cos(np.radians(self.orientation + direction))
+        y_position = self.y_position + self.tile_width * np.sin(np.radians(self.orientation + direction))
+        x_coordinate, y_coordinate = self.position_to_coordinates(x_position, y_position)
+        return x_coordinate, y_coordinate
+
+    def detect_walls(self):
+        # Get wall distance
         front_distance = read_ultrasonic(self.front_ultrasonic)
         left_distance = read_ultrasonic(self.left_ultrasonic)
         right_distance = read_ultrasonic(self.right_ultrasonic)
 
+        front_x, front_y = self.get_neighbor_coordinates(FRONT)
+        left_x, left_y = self.get_neighbor_coordinates(LEFT)
+        right_x, right_y = self.get_neighbor_coordinates(RIGHT)
+
         if front_distance < self.tile_width / 2:
-            x_pos = self.x_position + 1.1 * self.tile_width * np.cos(np.radians(self.orientation))
-            y_pos = self.y_position + 1.1 * self.tile_width * np.sin(np.radians(self.orientation))
-            x_coord, y_coord = self.position_to_coordinates(x_pos, y_pos)
-            self.update_map(x_coord, y_coord, OBSTACLE)
+            self.update_map(front_x, front_y, WALL)
+        else:
+            self.update_map(front_x, front_y, CLEAR)
 
-        # if left_distance < self.tile_width / 2:
-        #     x_pos = self.x_position + 1.1 * self.tile_width * np.cos(np.radians(self.orientation + 90))
-        #     y_pos = self.y_position + 1.1 * self.tile_width * np.sin(np.radians(self.orientation + 90))
-        #     x_coord, y_coord = self.position_to_coordinates(x_pos, y_pos)
-        #     self.update_map(x_coord, y_coord, OBSTACLE)
-        #
-        # if right_distance < self.tile_width / 2:
-        #     x_pos = self.x_position + 1.1 * self.tile_width * np.cos(np.radians(self.orientation - 90))
-        #     y_pos = self.y_position + 1.1 * self.tile_width * np.sin(np.radians(self.orientation - 90))
-        #     x_coord, y_coord = self.position_to_coordinates(x_pos, y_pos)
-        #     self.update_map(x_coord, y_coord, OBSTACLE)
+        if left_distance < self.tile_width / 2:
+            self.update_map(left_x, left_y, WALL)
+        else:
+            self.update_map(left_x, left_y, CLEAR)
 
-        # orientation = self.orientation % 360
-        # if orientation < 0:
-        #     orientation += 360
-        #
-        # if obstacle_distance < self.tile_width / 2:
-        #     if 315 < orientation <= 359 or 0 <= orientation < 45:
-        #         x_coordinate, y_coordinate = self.position_to_coordinates(self.x_position + self.tile_width,
-        #                                                                   self.y_position)
-        #     elif 45 <= orientation < 135:
-        #         x_coordinate, y_coordinate = self.position_to_coordinates(self.x_position,
-        #                                                                   self.y_position + self.tile_width)
-        #     elif 135 <= orientation < 225:
-        #         x_coordinate, y_coordinate = self.position_to_coordinates(self.x_position - self.tile_width,
-        #                                                                   self.y_position)
-        #     else:
-        #         x_coordinate, y_coordinate = self.position_to_coordinates(self.x_position,
-        #                                                                   self.y_position - self.tile_width)
-        #
-        #     self.update_map(x_coordinate, y_coordinate, OBSTACLE)
+        if right_distance < self.tile_width / 2:
+            self.update_map(right_x, right_y, WALL)
+        else:
+            self.update_map(right_x, right_y, CLEAR)
 
-    def avoid_obstacles(self):
+    def avoid_walls(self):
         r = round(self.row - np.sin(np.radians(self.heading)))
         c = round(self.col + np.cos(np.radians(self.heading)))
         try:
@@ -206,7 +197,7 @@ class Gears(BrickPi3):
         if r < 0 or c < 0:
             front_mark = UNKNOWN
 
-        if front_mark == OBSTACLE or front_mark == PATH:
+        if front_mark == WALL or front_mark == PATH:
             self.turn_left()
 
     def expand_map(self, row, col):
@@ -245,8 +236,9 @@ class Gears(BrickPi3):
 
     # Convert position (cm) to coordinates (tile widths)
     def position_to_coordinates(self, x_position, y_position):
-        x_coordinate = int(x_position / self.tile_width)
-        y_coordinate = int(y_position / self.tile_width)
+        x_coordinate = x_position / self.tile_width
+        y_coordinate = y_position / self.tile_width
+
         return x_coordinate, y_coordinate
 
     def coordinates_to_position(self, x_coordinate, y_coordinate):
@@ -255,14 +247,14 @@ class Gears(BrickPi3):
     # Convert coordinates (tile widths) to row and column indices
     def coordinates_to_indices(self, x_coordinate, y_coordinate):
         # Get the current row and col indices of GEARS
-        row = int(self.origin_row - y_coordinate)
-        col = int(self.origin_col + x_coordinate)
+        row = round(self.origin_row - y_coordinate)
+        col = round(self.origin_col + x_coordinate)
 
         return row, col
 
     def indices_to_coordinates(self, row, col):
-        y_coordinate = int(self.origin_row - row)
-        x_coordinate = int(col - self.origin_col)
+        y_coordinate = self.origin_row - row
+        x_coordinate = col - self.origin_col
 
         return x_coordinate, y_coordinate
 
@@ -339,17 +331,29 @@ class Gears(BrickPi3):
 
         # If marking the position of GEARS
         if mark == GEARS:
+
             # Replace previous GEARS mark with path mark
             self.map[self.map == GEARS] = PATH
 
-        # Do not overwrite origin
-        if row == self.origin_row and col == self.origin_col:
+        # If placing a clear mark
+        if mark == CLEAR:
+
+            # If the target tile is not marked unknown
+            if not (self.map[row][col] == UNKNOWN):
+
+                # Do not overwrite that mark
+                return
+
+        # If trying to place a map at the origin
+        if self.map[row][col] == ORIGIN:
 
             # If trying to place a waypoint at the origin
             if mark == WAYPOINT:
 
                 # Signal that GEARS is trying to go to the origin
                 self.origin_marked = True
+
+            # Do not overwrite the origin
             return
 
         self.map[row][col] = mark
@@ -372,8 +376,8 @@ class Gears(BrickPi3):
         self.turning = True
 
     def mark_waypoint(self):
-        x_coordinate = int(input('Enter the x-coordinate: '))
-        y_coordinate = int(input('Enter the y-coordinate: '))
+        x_coordinate = float(input('Enter the x-coordinate: '))
+        y_coordinate = float(input('Enter the y-coordinate: '))
 
         self.map[self.map == WAYPOINT] = UNKNOWN  # Clear previous waypoint
 
@@ -398,12 +402,19 @@ class Gears(BrickPi3):
             return
 
         # Get the coordinates of the waypoint
-        x_coordinate, y_coordinate = self.indices_to_coordinates(row, col)
-        x_position, y_position = self.coordinates_to_position(x_coordinate, y_coordinate)
-        # Set the heading to face the waypoint
-        delta_x = x_position - self.x_position
-        delta_y = y_position - self.y_position
+        x_position, y_position = self.indices_to_position(row, col)
+
+        if abs(self.x_position - x_position) > 1:
+            delta_x = x_position - self.x_position
+            delta_y = 0
+        elif abs(self.y_position - y_position) > 1:
+            delta_x = 0
+            delta_y = y_position - self.y_position
+        else:
+            return
+
         self.heading = np.degrees(np.arctan2(delta_y, delta_x))
+
         if abs(self.orientation - self.heading) > 1:
             self.turning = True
 
@@ -446,9 +457,9 @@ class Gears(BrickPi3):
 
             # MODE DEPENDENT METHODS
             if self.mode == 'auto':
-                self.detect_obstacles()  # Detect obstacles with the ultrasonic sensor and mark them on the map
+                self.detect_walls()  # Detect walls with the ultrasonic sensor and mark them on the map
                 self.move_forward()
-                self.avoid_obstacles()  # Turn left if facing an obstacle
+                self.avoid_walls()  # Turn left if facing a wall
             if self.mode == 'waypoint':
                 self.goto_waypoint(origin=self.origin_marked)
             elif self.mode == 'manual':
