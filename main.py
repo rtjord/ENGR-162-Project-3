@@ -8,7 +8,7 @@ def main():
     gears = Gears()  # Create a Gears object
 
     # Create a Terminal object
-    terminal = Terminal(gears, on_startup=[], on_exit=[gears.reset_all])
+    terminal = Terminal(gears, on_startup=[], on_exit=[gears.exit])
     terminal.start()  # Start the terminal
 
     try:

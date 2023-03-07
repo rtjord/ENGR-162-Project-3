@@ -11,6 +11,14 @@ ORIGIN = 3
 WAYPOINT = 4
 CLEAR = 5
 
+# GEARS = 'G'
+# PATH = 'X'
+# UNKNOWN = 'U'
+# WALL = '!'
+# ORIGIN = 'O'
+# WAYPOINT = 'W'
+# CLEAR = ' '
+
 FRONT = 0
 LEFT = 90
 BACK = 180
@@ -359,13 +367,14 @@ class Gears(BrickPi3):
         self.map[row][col] = mark
 
     def display_map(self):
-        for row in range(8):
-            for col in range(16):
-                if self.map[row+1][col+1] == 1:
-                    print('X', end=' ')
-                else:
-                    print(' ', end=' ')
-            print()
+        map_copy = self.map.copy()
+        map_copy[map_copy == ORIGIN] = PATH
+        map_copy[map_copy != PATH] = CLEAR
+        print('---' * len(map_copy[0]))
+        for row in map_copy:
+            print('|', end='')
+            print(*row, sep=', ', end='|\n')
+        print('---' * len(map_copy[0]))
 
     def set_heading(self, degrees):
         self.heading = degrees % 360
@@ -433,11 +442,26 @@ class Gears(BrickPi3):
     def check_finished(self):
         pass
 
-    # Set position and/or dps for all motors
+    # Set dps for all motors
     # This is the only method that interfaces directly with the motors
     def update_motors(self):
+
+        # If GEARS is off and the motor dps is being set to a nonzero value
+        if not self.on and (self.left_dps != 0 or self.right_dps !=0):
+
+            # Do not update the motor dps values
+            return
+
+        # Update the motor dps values
         self.set_motor_dps(self.left_wheel, self.left_dps)
         self.set_motor_dps(self.right_wheel, self.right_dps)
+
+    # Turn off and reset all motors
+    def exit(self):
+        self.on = False
+        self.stop()
+        self.update_motors()
+        self.reset_all()
 
     # Main logic for the rover during the primary demonstration
     # Later method calls have higher priority
@@ -472,3 +496,4 @@ class Gears(BrickPi3):
 
         self.update_motors()  # Update dps values for the motors (Directly interfaces with motors)
         sleep(self.buffer_time)  # Wait several milliseconds before repeating
+

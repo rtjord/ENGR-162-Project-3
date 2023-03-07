@@ -21,13 +21,13 @@ def cast(data_type, var):
         print(f'Cannot convert {var} to type {data_type}')
 
 
-# Terminal to interact with the rover in real time
-# Rover must have at least two instance variables: on and num_button_presses
+# Terminal to interact with the GEARS in real time
+# object must have 'self.on' as an instance variable
 class Terminal:
     def __init__(self, obj, on_startup=(), on_exit=()):
         if on_startup is None:
             on_startup = []
-        self.obj = obj  # rover object that the terminal is controlling
+        self.obj = obj  # object that the terminal is controlling
         self.obj_class_name = type(obj).__name__  # object's class name
 
         # known commands
@@ -44,13 +44,16 @@ class Terminal:
         self.log = []  # list of previous commands
         self.input_thread = Thread(target=self.get_input)  # Create a thread to receive user input
 
-        self.on_startup = on_startup  # rover method to run on startup
-        self.on_exit = on_exit  # rover method to run on exit
+        self.on_startup = on_startup  # object methods to run on startup
+        self.on_exit = on_exit  # object methods to run on exit
 
     # Start the terminal
     def start(self):
+
+        # run start up methods
         for method in self.on_startup:
-            method()  # run rover method (get_target_speed, get_dropsite)
+            method()
+
         self.print_commands()  # print all commands
         self.input_thread.start()  # start listening for user input
 
@@ -88,19 +91,19 @@ class Terminal:
             args = input_list[1:]  # Any words after the command are additional arguments
             self.commands[cmd](*args)  # Execute the correct command
 
-    # Turn on the rover
+    # Turn on the object
     def on_cmd(self, *args):
 
-        # If the rover is off
+        # If the object is off
         if not self.obj.on:
             self.obj.on = True
             print(f'{self.obj_class_name} on')
 
-        # If the rover is already on
+        # If the object is already on
         else:
             print('Already on')  # Alert the user
 
-    # Turn off the rover
+    # Turn off the object
     def off_cmd(self, *args):
 
         # If GEARS is on
@@ -112,7 +115,7 @@ class Terminal:
         else:
             print('Already off')  # Alert the user
 
-    # Get the value of a rover instance variable
+    # Get the value of an instance variable
     def get_cmd(self, *args):
         try:
             name = args[0]  # Get the instance variable name
@@ -205,8 +208,11 @@ class Terminal:
 
     # Exit the terminal
     def exit(self, *args):
+
+        # Call the objects exit methods
         for method in self.on_exit:
-            method()  # Call the rover's exit methods (reset all)
+            method()
+
         self.active = False  # Deactivate terminal
 
 
