@@ -21,6 +21,20 @@ def cast(data_type, var):
         print(f'Cannot convert {var} to type {data_type}')
 
 
+# Convert items in the list to ints and floats if possible
+def list_to_numeric(my_list):
+    for i, item in enumerate(my_list):
+        try:
+            # If the item is an integer
+            if int(item) == float(item):
+                my_list[i] = int(item)
+            else:
+                my_list[i] = float(item)
+        except ValueError:
+            continue
+    return my_list
+
+
 # Terminal to interact with the GEARS in real time
 # object must have 'self.on' as an instance variable
 class Terminal:
@@ -164,7 +178,10 @@ class Terminal:
             return
 
         if callable(method):
-            method()
+
+            # Assumes any strings that can be converted to float should be converted to float
+            method_args = list_to_numeric(list(args[1:]))
+            method(*method_args)
         else:
             print(f"'{method_name}' is not callable")
 

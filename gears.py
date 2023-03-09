@@ -2,6 +2,7 @@ from brickpi3 import BrickPi3
 import grovepi
 import numpy as np
 from time import sleep
+import pandas as pd
 
 GEARS = 2
 PATH = 1
@@ -96,7 +97,7 @@ class Gears(BrickPi3):
         self.prev_left_encoder = 0  # value of left encoder from previous cycle
         self.prev_right_encoder = 0  # value of right encoder from previous cycle
         self.tile_width = 40  # width of a tile on the map (cm)
-        self.hazards = {'type': [], 'parameter': [], 'value': [], 'x': [], 'y': []}  # Dictionary of hazards
+        self.hazards = pd.DataFrame(columns=['type', 'parameter', 'value', 'x', 'y'])
 
         # ADDITIONAL ATTRIBUTES
         self.on = False  # Is GEARS on?
@@ -124,11 +125,13 @@ class Gears(BrickPi3):
         self.left_dps = -1 * self.max_dps
         self.right_dps = -1 * self.max_dps
 
+    # Turn 90 degrees left
     def turn_left(self):
         if not self.turning:
             self.heading += 90
             self.turning = True
 
+    # Turn 90 degrees right
     def turn_right(self):
         if not self.turning:
             self.heading -= 90
@@ -143,25 +146,33 @@ class Gears(BrickPi3):
     def correct_orientation(self):
         # Use proportional control to minimize the difference between the orientation
         # and desired heading of GEARS
+        gain = 5
 
         if self.turning:
             error = self.heading - self.orientation
-            dps = 5 * error
+            dps = gain * error
+
             # limit the dps of the motors
             dps = min(self.max_dps, max(-1 * self.max_dps, dps))
+
             # Set the motor dps values
             self.left_dps = -1 * dps
             self.right_dps = dps
+
+            # if the error is less than one degree
             if abs(error) < 1:
+
+                # Stop turning
                 self.stop()
                 self.turning = False
 
     def record_hazard(self, hazard_type, parameter, value, x, y):
-        self.hazards['type'].append(hazard_type)
-        self.hazards['parameter'].append(parameter)
-        self.hazards['value'].append(value)
-        self.hazards['x'].append(x)
-        self.hazards['y'].append(y)
+
+        # Create new row
+        new_entry = pd.DataFrame([[hazard_type, parameter, value, x, y]], columns=self.hazards.columns)
+
+        # Insert new row
+        self.hazards = pd.concat([self.hazards, new_entry], ignore_index=True)
 
     def get_neighbor_coordinates(self, direction):
         x_position = self.x_position + self.tile_width * np.cos(np.radians(self.orientation + direction))
@@ -170,14 +181,19 @@ class Gears(BrickPi3):
         return x_coordinate, y_coordinate
 
     def detect_walls(self):
+
         # Get wall distance
         front_distance = read_ultrasonic(self.front_ultrasonic)
         left_distance = read_ultrasonic(self.left_ultrasonic)
         right_distance = read_ultrasonic(self.right_ultrasonic)
 
+        # Get the coordinates of the tiles that sensors are pointing at
         front_x, front_y = self.get_neighbor_coordinates(FRONT)
         left_x, left_y = self.get_neighbor_coordinates(LEFT)
         right_x, right_y = self.get_neighbor_coordinates(RIGHT)
+
+        # If the sensors detect a wall, mark it
+        # Otherwise, mark the tile as clear
 
         if front_distance < self.tile_width / 2:
             self.update_map(front_x, front_y, WALL)
@@ -447,7 +463,7 @@ class Gears(BrickPi3):
     def update_motors(self):
 
         # If GEARS is off and the motor dps is being set to a nonzero value
-        if not self.on and (self.left_dps != 0 or self.right_dps !=0):
+        if not self.on and (self.left_dps != 0 or self.right_dps != 0):
 
             # Do not update the motor dps values
             return
