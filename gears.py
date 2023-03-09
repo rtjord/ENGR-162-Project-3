@@ -49,6 +49,19 @@ def get_magnitude(*args):
     return np.sqrt(np.dot(args, args))
 
 
+# Get the row and coordinates of a reachable unknown tile on the map
+def find_unknown(arr, row, col):
+    print(row, col)
+    # Check out of bounds
+    if row < 0 or row >= len(arr) or col < 0 or col >= len(arr[0]):
+        return False
+
+    # return coordinates if at an unexplored area
+    if arr[row][col] == 0:
+        return True
+    return find_unknown(arr, row + 1, col) or find_unknown(arr, row - 1, col) or find_unknown(arr, row, col + 1) or \
+        find_unknown(arr, row, col - 1)
+
 class Gears(BrickPi3):
     def __init__(self, mode='auto', max_speed=15, wheel_radius=3, buffer_time=0.01):
 
@@ -458,6 +471,7 @@ class Gears(BrickPi3):
         # correct_orientation should be called later to ensure GEARS is facing the
         # correct direction
         self.move_forward()
+
 
     # Check if GEARS has completed the mission
     def check_finished(self):
