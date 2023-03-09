@@ -65,9 +65,10 @@ class Gears(BrickPi3):
         # Reset all motor encoders to 0
         self.reset_motor_encoders()
 
-        # Radius of wheels (assumes all wheels have the same radius)
+        # Wheels (assumes all wheels have the same radius)
         self.wheel_radius = wheel_radius
         self.wheel_circumference = 2 * np.pi * self.wheel_radius  # cm
+        self.turning_constant = 0.135  # convert motor encoder difference to orientation
 
         # Motor Speeds
         self.max_dps = get_dps(max_speed, wheel_radius)
@@ -159,12 +160,16 @@ class Gears(BrickPi3):
             self.left_dps = -1 * dps
             self.right_dps = dps
 
-            # if the error is less than one degree
-            if abs(error) < 1:
+            # if the error is less than 0.5 degree
+            if abs(error) < 0.5:
 
                 # Stop turning
                 self.stop()
                 self.turning = False
+
+    def wait_for_turn(self):
+        while self.turning:
+            self.correct_orientation()
 
     def record_hazard(self, hazard_type, parameter, value, x, y):
 
@@ -337,7 +342,7 @@ class Gears(BrickPi3):
         right_encoder = self.get_motor_encoder(self.right_wheel)
 
         # the orientation of GEARS should be a constant multiple of the difference in motor encoder values
-        self.orientation = 0.105 * (right_encoder - left_encoder)
+        self.orientation = self.turning_constant * (right_encoder - left_encoder)
 
         # # Keep orientation between 0 and 359 degrees
         # self.orientation %= 360
@@ -458,6 +463,28 @@ class Gears(BrickPi3):
     def check_finished(self):
         pass
 
+    def calibrate_turns(self):
+
+        # Get the turning constant from the user
+        self.turning_constant = float(input('Enter the turning constant: '))
+
+        # reset all relevant variables
+        self.reset_motor_encoders()
+        self.heading = 0
+        self.orientation = 0
+
+        # Turn 180 degrees
+        self.set_heading(180)
+        self.wait_for_turn()
+
+        left_encoder = self.get_motor_encoder(self.left_wheel)
+        right_encoder = self.get_motor_encoder(self.right_wheel)
+        difference = right_encoder - left_encoder
+        print('Encoder difference:', difference, 'degrees')
+        print('Turning constant:', self.turning_constant)
+        print('Orientation:', self.orientation)
+        print('Heading:', self.heading)
+
     # Set dps for all motors
     # This is the only method that interfaces directly with the motors
     def update_motors(self):
@@ -512,4 +539,3 @@ class Gears(BrickPi3):
 
         self.update_motors()  # Update dps values for the motors (Directly interfaces with motors)
         sleep(self.buffer_time)  # Wait several milliseconds before repeating
-
