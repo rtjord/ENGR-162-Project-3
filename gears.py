@@ -3,23 +3,25 @@ import grovepi
 import numpy as np
 from time import sleep
 import pandas as pd
-from path_finding import find_path
+from path_finding import find_unknowns, find_path
 
-GEARS = 2
-PATH = 1
-UNKNOWN = 0
-WALL = -1
-ORIGIN = 3
-WAYPOINT = 4
-CLEAR = 5
+# GEARS = 2
+# PATH = 1
+# UNKNOWN = 0
+# WALL = -1
+# ORIGIN = 3
+# WAYPOINT = 4
+# CLEAR = 5
+# TARGET = 6
 
-# GEARS = 'G'
-# PATH = 'X'
-# UNKNOWN = 'U'
-# WALL = '!'
-# ORIGIN = 'O'
-# WAYPOINT = 'W'
-# CLEAR = ' '
+GEARS = 'G'
+PATH = 'X'
+UNKNOWN = 'U'
+WALL = '!'
+ORIGIN = 'O'
+WAYPOINT = 'W'
+CLEAR = ' '
+TARGET = 'T'
 
 FRONT = 0
 LEFT = 90
@@ -54,36 +56,6 @@ def get_magnitude(*args):
 def get_distance(vec1, vec2):
     displacement = np.subtract(vec1, vec2)
     return get_magnitude(*displacement)
-
-
-# must pass a list for points
-def find_unknowns(arr, row, col, points):
-
-    # make a copy of the array to edit
-    arr = arr.copy()
-
-    # Check out of bounds
-    if row < 0 or row >= len(arr) or col < 0 or col >= len(arr[0]):
-        return
-
-    # Ran into wall
-    if arr[row][col] == WALL:
-        return
-
-    # found unknown
-    if arr[row][col] == UNKNOWN or arr[row][col] == CLEAR:
-        points.append((row, col))
-        return
-
-    # prevent doubling back
-    arr[row][col] = WALL
-
-    # return coordinates if at an unexplored area
-    find_unknowns(arr.copy(), row + 1, col, points)
-    find_unknowns(arr.copy(), row - 1, col, points)
-    find_unknowns(arr.copy(), row, col + 1, points)
-    find_unknowns(arr.copy(), row, col - 1, points)
-    return
 
 
 class Gears(BrickPi3):
@@ -140,6 +112,8 @@ class Gears(BrickPi3):
         self.target_y = self.y_coordinate
         self.lead_x = self.x_coordinate
         self.lead_y = self.y_coordinate
+        self.path = []
+        self.path_index = 0
 
         # ADDITIONAL ATTRIBUTES
         self.on = False  # Is GEARS on?
@@ -267,7 +241,7 @@ class Gears(BrickPi3):
         if r < 0 or c < 0:
             front_mark = UNKNOWN
 
-        if front_mark == WALL or front_mark == PATH:
+        if front_mark == WALL:
             self.turn_left()
 
     def expand_map(self, row, col):
@@ -399,22 +373,22 @@ class Gears(BrickPi3):
         # Get new indices after expanding map
         row, col = self.coordinates_to_indices(x_coordinate, y_coordinate)
 
-        # Do not overwrite the origin
-        if row == self.origin_row and col == self.origin_col:
+        # Do not overwrite the origin or walls
+        safe_list = [ORIGIN, WALL]
+        if self.map[row][col] in safe_list:
             return
 
-        # If marking the position of GEARS
-        if mark == GEARS:
+        # Replace previous gears or target with path
+        replace_list = [GEARS, TARGET]
+        if mark in replace_list:
 
-            # Replace previous GEARS mark with path mark
-            self.map[self.map == GEARS] = PATH
+            # Replace previous mark with path mark
+            self.map[self.map == mark] = PATH
 
         # If placing a clear mark
         if mark == CLEAR:
-
             # If the target tile is not marked unknown
-            if not (self.map[row][col] == UNKNOWN):
-
+            if self.map[row][col] != UNKNOWN:
                 # Do not overwrite that mark
                 return
 
@@ -545,21 +519,30 @@ class Gears(BrickPi3):
 
     def get_new_target(self):
         nearest_unknown = self.get_nearest_unknown()  # Get the nearest unknown point on the map
-
         # If an unknown point was found
         if nearest_unknown is not None:
             self.target_x, self.target_y = self.indices_to_coordinates(*nearest_unknown)
+            self.update_map(self.target_x, self.target_y, TARGET)
 
     def update_lead(self):
-        path = []
-        target_row, target_col = self.coordinates_to_indices(self.target_x, self.target_y)
-        # Find a path from GEARS to the target
-        find_path(self.map, self.row, self.col, target_row, target_col, path)
-        if len(path) >= 2:
-            path = path[:path.index((target_row, target_col))+1]
-            self.lead_x, self.lead_y = path[1]
+        # if at the target, get a new path
+        if self.at_target():
+            self.path = []
+            self.path_index = 0
+            target_row, target_col = self.coordinates_to_indices(self.target_x, self.target_y)
+            # Find a path from GEARS to the target
+            find_path(self.map, self.row, self.col, target_row, target_col, self.path)
+            if len(self.path) >= 2:
+                target_index = self.path.index((target_row, target_col))
+                self.path = self.path[1:target_index+1]
 
-        self.lead_x, self.lead_y = self.target_x, self.target_y
+        elif self.at_lead():
+            self.path_index += 1
+
+        try:
+            self.lead_x, self.lead_y = self.path[self.path_index]
+        except IndexError:
+            self.lead_x, self.lead_y = self.target_x, self.target_y
 
     def follow_lead(self):
         x_position, y_position = self.coordinates_to_position(self.lead_x, self.lead_y)
@@ -583,6 +566,12 @@ class Gears(BrickPi3):
         # correct direction
         self.move_forward()
 
+    def at_target(self):
+        return abs(self.x_coordinate - self.target_x) < 0.1 and abs(self.y_coordinate - self.target_y) < 0.1
+
+    def at_lead(self):
+        abs(self.x_coordinate - self.lead_x) < 0.1 and abs(self.y_coordinate - self.lead_y) < 0.1
+
     # Main logic for the rover during the primary demonstration
     # Later method calls have higher priority
     def run(self):
@@ -602,8 +591,7 @@ class Gears(BrickPi3):
             # MODE DEPENDENT METHODS
             if self.mode == 'auto':
                 self.detect_walls()  # Detect walls with the ultrasonic sensor and mark them on the map
-                if abs(self.x_coordinate - self.target_x) < 1 and abs(self.y_coordinate - self.target_y) < 1:
-                    print('target found')
+                if self.at_target():
                     self.get_new_target()
                 self.update_lead()
                 self.follow_lead()
