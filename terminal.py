@@ -52,6 +52,7 @@ class Terminal:
                          'run': self.run_cmd,
                          'list': self.list_cmd,
                          'log': self.log_cmd,
+                         'reset': self.reset_cmd,
                          'exit': self.exit}
 
         self.active = True  # set false to deactivate the terminal
@@ -222,6 +223,10 @@ class Terminal:
 
     def log_cmd(self, *args):
         print(self.log)
+
+    # Reset the object
+    def reset_cmd(self):
+        self.obj.__init__()
 
     # Exit the terminal
     def exit(self, *args):
