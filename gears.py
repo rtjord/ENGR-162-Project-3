@@ -1,9 +1,9 @@
 from brickpi3 import BrickPi3
-import grovepi
 import numpy as np
 from time import sleep
 import pandas as pd
-from path_finding import find_unknowns, find_path
+from helpers import get_dps, read_ultrasonic, get_distance
+from path_finding import find_unknowns, grid_graph, remove_node, find_path
 
 # GEARS = 2
 # PATH = 1
@@ -27,35 +27,6 @@ FRONT = 0
 LEFT = 90
 BACK = 180
 RIGHT = 270
-
-
-# Convert linear speed to angular speed
-def get_dps(linear_speed, wheel_radius):
-    circumference = 2 * np.pi * wheel_radius
-    return linear_speed * 360 / circumference
-
-
-# Convert sensor reading to measurement using linear regression model
-def linear_regression(sensor_reading, slope, y_int):
-    return slope * sensor_reading + y_int
-
-
-# Return the distance to the nearest wall detected by the ultrasonic sensor
-def read_ultrasonic(port):
-    sensor_reading = grovepi.ultrasonicRead(port)
-    distance = linear_regression(sensor_reading, 0.9423, 2.2666)
-    return distance
-
-
-# Get the magnitude of a vector of arbitrary length
-def get_magnitude(*args):
-    return np.sqrt(np.dot(args, args))
-
-
-# Get the distance between two vectors
-def get_distance(vec1, vec2):
-    displacement = np.subtract(vec1, vec2)
-    return get_magnitude(*displacement)
 
 
 class Gears(BrickPi3):
@@ -359,9 +330,6 @@ class Gears(BrickPi3):
         # the orientation of GEARS should be a constant multiple of the difference in motor encoder values
         self.orientation = self.turning_constant * (right_encoder - left_encoder)
 
-        # # Keep orientation between 0 and 359 degrees
-        # self.orientation %= 360
-
     # Mark the current position of GEARs on the map
     # Assumes GEARS started in the lower left hand corner of the map
     def update_map(self, x_coordinate, y_coordinate, mark):
@@ -470,10 +438,6 @@ class Gears(BrickPi3):
                 min_distance = distance
         return nearest_point
 
-    # Check if GEARS has completed the mission
-    def check_finished(self):
-        pass
-
     def calibrate_turns(self):
 
         # Get the turning constant from the user
@@ -496,27 +460,6 @@ class Gears(BrickPi3):
         print('Orientation:', self.orientation)
         print('Heading:', self.heading)
 
-    # Set dps for all motors
-    # This is the only method that interfaces directly with the motors
-    def update_motors(self):
-
-        # If GEARS is off and the motor dps is being set to a nonzero value
-        if not self.on and (self.left_dps != 0 or self.right_dps != 0):
-
-            # Do not update the motor dps values
-            return
-
-        # Update the motor dps values
-        self.set_motor_dps(self.left_wheel, self.left_dps)
-        self.set_motor_dps(self.right_wheel, self.right_dps)
-
-    # Turn off and reset all motors
-    def exit(self):
-        self.on = False
-        self.stop()
-        self.update_motors()
-        self.reset_all()
-
     def get_new_target(self):
         nearest_unknown = self.get_nearest_unknown()  # Get the nearest unknown point on the map
         # If an unknown point was found
@@ -524,17 +467,28 @@ class Gears(BrickPi3):
             self.target_x, self.target_y = self.indices_to_coordinates(*nearest_unknown)
             self.update_map(self.target_x, self.target_y, TARGET)
 
+    def get_path(self):
+        num_rows = len(self.map)
+        num_cols = len(self.map[0])
+        graph = grid_graph(num_rows, num_cols)
+
+        source = (self.x_coordinate, self.y_coordinate)
+        target = (self.target_x, self.target_y)
+        walls = np.array(np.where(self.map == WALL)).T
+
+        for wall in walls:
+            graph = remove_node(graph, wall, num_cols)
+
+        path = find_path(graph, source, target, num_cols)
+        return path
+
     def update_lead(self):
         # if at the target, get a new path
         if self.at_target():
-            self.path = []
-            self.path_index = 0
+            self.path_index = 1
             target_row, target_col = self.coordinates_to_indices(self.target_x, self.target_y)
             # Find a path from GEARS to the target
-            find_path(self.map, self.row, self.col, target_row, target_col, self.path)
-            if len(self.path) >= 2:
-                target_index = self.path.index((target_row, target_col))
-                self.path = self.path[1:target_index+1]
+            self.path = self.get_path()
 
         elif self.at_lead():
             self.path_index += 1
@@ -570,7 +524,28 @@ class Gears(BrickPi3):
         return abs(self.x_coordinate - self.target_x) < 0.1 and abs(self.y_coordinate - self.target_y) < 0.1
 
     def at_lead(self):
-        abs(self.x_coordinate - self.lead_x) < 0.1 and abs(self.y_coordinate - self.lead_y) < 0.1
+        return abs(self.x_coordinate - self.lead_x) < 0.1 and abs(self.y_coordinate - self.lead_y) < 0.1
+
+    # Set dps for all motors
+    # This is the only method that interfaces directly with the motors
+    def update_motors(self):
+
+        # If GEARS is off and the motor dps is being set to a nonzero value
+        if not self.on and (self.left_dps != 0 or self.right_dps != 0):
+
+            # Do not update the motor dps values
+            return
+
+        # Update the motor dps values
+        self.set_motor_dps(self.left_wheel, self.left_dps)
+        self.set_motor_dps(self.right_wheel, self.right_dps)
+
+    # Turn off and reset all motors
+    def exit(self):
+        self.on = False
+        self.stop()
+        self.update_motors()
+        self.reset_all()
 
     # Main logic for the rover during the primary demonstration
     # Later method calls have higher priority
