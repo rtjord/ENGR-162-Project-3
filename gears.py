@@ -3,7 +3,7 @@ import numpy as np
 from time import sleep
 import pandas as pd
 from helpers import get_dps, read_ultrasonic, get_distance
-from path_finding import grid_graph, remove_node, find_nearest_unknown, find_path
+from path_finding import *
 
 
 # ORIGIN = 3
@@ -393,37 +393,52 @@ class Gears(BrickPi3):
     def get_new_path(self):
 
         # construct a graph to represent the map
-        num_rows = len(self.map)
-        num_cols = len(self.map[0])
+        num_rows, num_cols = self.map.shape
         graph = grid_graph(num_rows, num_cols)
 
-        # Get the indices of marks of the map
+        # Get the indices of walls of the map
         walls = np.array(np.where(self.map == WALL)).T
-        origin = np.array(np.where(self.map == ORIGIN)).T
-        path_points = np.array(np.where(self.map == PATH)).T
-        gears = np.array(np.where(self.map == GEARS)).T
 
-        # indices of all known points
-        known_points = np.concatenate((origin, path_points, gears))
+        # Clear marks are considered known
+        known_indices = np.array(np.where(self.map != UNKNOWN)).T
 
-        # convert indices to coordinates
-        known_points = [self.indices_to_coordinates(row, col) for row, col in known_points]
-
-        # x and y coordinates of origin relative to bottom left corner of map
-        origin = (len(self.map) - self.origin_row, self.origin_col)
+        # convert indices to nodes
+        wall_nodes = [indices_to_node(row, col, num_rows) for row, col in walls]
+        known_nodes = [indices_to_node(row, col, num_rows) for row, col in known_indices]
 
         # remove the walls from the graph
-        for wall in walls:
-            graph = remove_node(graph, wall, num_cols, origin)
+        for node in wall_nodes:
+            graph = remove_node(graph, node, num_cols)
 
-        source = (self.x_coordinate, self.y_coordinate)  # start at GEARS
+        # convert gears indices to node
+        source_node = indices_to_node(self.row, self.col, num_rows)
 
         # set target to the nearest unknown point
-        self.target_x, self.target_y = find_nearest_unknown(graph, source, num_cols, origin, known_points)
-        target = (self.target_x, self.target_y)
+        target_node = find_nearest_unknown(graph, source_node, num_cols, known_nodes)
+
+        # if an unknown point could not be found
+        if target_node is None:
+            print('Could not locate unknown point. Expanding map.')
+
+            # Expand the map in all directions, marking each new tile as unknown
+            self.map = np.pad(self.map, [(1, 1), (1, 1)], mode='constant', constant_values=UNKNOWN)
+
+            # The target has not changed, so this method should be called again automatically
+            # GEARS should be able to reach one of the unknown tiles on the expanded map
+            return
+
+        # convert target node to coordinates
+        target_row, target_col = node_to_indices(target_node[0], target_node[1], num_rows)
+        self.target_x, self.target_y = self.indices_to_coordinates(target_row, target_col)
 
         # find a path from GEARS to the target
-        self.path = find_path(graph, source, target, num_cols, origin)
+        node_path = find_path(graph, source_node, target_node, num_cols)
+
+        # convert nodes to indices
+        indices_path = [node_to_indices(x, y, num_rows) for x, y in node_path]
+
+        # convert indices to coordinates
+        self.path = [self.indices_to_coordinates(row, col) for row, col in indices_path]
 
         self.lead_x, self.lead_y = self.path[1]
         self.path_index = 1

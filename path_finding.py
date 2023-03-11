@@ -4,19 +4,15 @@ import numpy as np
 
 
 # Convert node index to x, y coordinates
-def node_index_to_coordinates(index, num_cols, origin=(0, 0)):
-    origin_x = origin[0]
-    origin_y = origin[1]
-    x = index % num_cols - origin_x
-    y = int(index / num_cols) - origin_y
+def index_to_node(index, num_cols):
+    x = index % num_cols
+    y = int(index / num_cols)
     return x, y
 
 
 # Convert x, y coordinates to node index
-def coordinates_to_node_index(x, y, num_cols, origin=(0, 0)):
-    origin_x = origin[0]
-    origin_y = origin[1]
-    return (x + origin_x) + num_cols * (y + origin_y)
+def node_to_index(x, y, num_cols):
+    return x + num_cols * y
 
 
 # Create a grid graph with dimensions m by n
@@ -30,9 +26,9 @@ def grid_graph(m, n):
 
     # Compare the x and y coordinates of each node to those of every other node
     for i1 in range(num_edges):
-        x1, y1 = node_index_to_coordinates(i1, n)
+        x1, y1 = index_to_node(i1, n)
         for i2 in range(num_edges):
-            x2, y2 = node_index_to_coordinates(i2, n)
+            x2, y2 = index_to_node(i2, n)
 
             # if the nodes are the same
             if x1 == x2 and y1 == y2:
@@ -58,21 +54,21 @@ def grid_graph(m, n):
 
 
 # remove node = (x, y) from the graph
-def remove_node(graph, node, num_cols, origin):
+def remove_node(graph, node, num_cols):
 
     # get x and y coordinates of node to remove
     x = node[0]
     y = node[1]
 
     # get index of node to remove
-    index = coordinates_to_node_index(x, y, num_cols, origin)
+    index = node_to_index(x, y, num_cols)
 
     # get edge array for graph
     arr = graph.toarray()
-
+    num_nodes = len(arr)
     # set the row and column corresponding to the node
     # to be removed equal to infinity
-    for i in range(num_cols**2):
+    for i in range(num_nodes):
         arr[index][i] = np.inf
         arr[i][index] = np.inf
 
@@ -81,28 +77,32 @@ def remove_node(graph, node, num_cols, origin):
     return graph
 
 
-def find_nearest_unknown(graph, source, num_cols, origin, known_points):
-    start_index = coordinates_to_node_index(source[0], source[1], num_cols, origin)
+def find_nearest_unknown(graph, source, num_cols, known_nodes):
+    start_index = node_to_index(source[0], source[1], num_cols)
     distance_matrix, predecessors = dijkstra(graph, directed=False, indices=start_index, return_predecessors=True)
 
-    nearest_index = distance_matrix.index(min(distance_matrix))
-    nearest_point = node_index_to_coordinates(nearest_index, num_cols, origin)
+    min_distance = min(distance_matrix)
+    nearest_index = np.where(distance_matrix == min_distance)[0][0]
+    nearest_node = index_to_node(nearest_index, num_cols)
 
-    while nearest_point in known_points:
+    while nearest_node in known_nodes:
         distance_matrix[nearest_index] = np.inf
-        nearest_index = distance_matrix.index(min(distance_matrix))
-        nearest_point = node_index_to_coordinates(nearest_index, num_cols, origin)
 
-    return nearest_point
+        min_distance = min(distance_matrix)
+        if min_distance == np.inf:
+            return None
+        nearest_index = np.where(distance_matrix == min_distance)[0][0]
+        nearest_node = index_to_node(nearest_index, num_cols)
+    return nearest_node
 
 
 # find a path from the source to the target
-def find_path(graph, source, target, num_cols, origin):
+def find_path(graph, source, target, num_cols):
     path = []  # initialize path
 
     # get the graph indices for the source and target
-    start_index = coordinates_to_node_index(source[0], source[1], num_cols, origin)
-    target_index = coordinates_to_node_index(target[0], target[1], num_cols, origin)
+    start_index = node_to_index(source[0], source[1], num_cols)
+    target_index = node_to_index(target[0], target[1], num_cols)
 
     # find paths from start_index to all the other points in the graph
     distance_matrix, predecessors = dijkstra(graph, directed=False, indices=start_index, return_predecessors=True)
@@ -116,8 +116,20 @@ def find_path(graph, source, target, num_cols, origin):
     path.append(start_index)
 
     # convert graph indices to x, y coordinates
-    path = [node_index_to_coordinates(index, num_cols, origin) for index in path]
+    path = [index_to_node(index, num_cols) for index in path]
 
     # reverse to get path from source to target
     path.reverse()
     return path
+
+
+def indices_to_node(row, col, num_rows):
+    x_coordinate = col
+    y_coordinate = num_rows - row - 1
+    return x_coordinate, y_coordinate
+
+
+def node_to_indices(x_coordinate, y_coordinate, num_rows):
+    row = num_rows - y_coordinate - 1
+    col = x_coordinate
+    return row, col
