@@ -2,14 +2,10 @@ from scipy.sparse.csgraph import dijkstra
 from scipy.sparse import csr_matrix
 import numpy as np
 
-GEARS = 'G'
-PATH = 'X'
-UNKNOWN = 'U'
+
 WALL = '!'
-ORIGIN = 'O'
-WAYPOINT = 'W'
 CLEAR = ' '
-TARGET = 'T'
+UNKNOWN = 'U'
 
 
 # Convert graph index to x, y coordinates
@@ -76,10 +72,10 @@ def remove_node(graph, node, num_cols):
     arr = graph.toarray()
 
     # set the row and column corresponding to the node
-    # to be removed equal to zero
+    # to be removed equal to infinity
     for i in range(num_cols**2):
-        arr[index][i] = 0
-        arr[i][index] = 0
+        arr[index][i] = np.inf
+        arr[i][index] = np.inf
 
     # turn the modified edge array back into a graph
     graph = csr_matrix(arr)
@@ -141,5 +137,3 @@ def find_unknowns(arr, row, col, points):
     find_unknowns(arr, row, col + 1, points)
     find_unknowns(arr, row, col - 1, points)
     return
-
-

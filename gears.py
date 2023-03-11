@@ -5,23 +5,24 @@ import pandas as pd
 from helpers import get_dps, read_ultrasonic, get_distance
 from path_finding import find_unknowns, grid_graph, remove_node, find_path
 
-# GEARS = 2
-# PATH = 1
-# UNKNOWN = 0
-# WALL = -1
-# ORIGIN = 3
-# WAYPOINT = 4
-# CLEAR = 5
-# TARGET = 6
 
-GEARS = 'G'
-PATH = 'X'
-UNKNOWN = 'U'
-WALL = '!'
+# ORIGIN = 3
+# PATH = 1
+# GEARS = 2
+# LEAD = 4
+# TARGET = 6
+# WALL = -1
+# CLEAR = 5
+# UNKNOWN = 0
+
 ORIGIN = 'O'
-WAYPOINT = 'W'
-CLEAR = ' '
+PATH = 'X'
+GEARS = 'G'
+LEAD = 'L'
 TARGET = 'T'
+WALL = '!'
+CLEAR = ' '
+UNKNOWN = 'U'
 
 FRONT = 0
 LEFT = 90
@@ -46,9 +47,9 @@ class Gears(BrickPi3):
         self.reset_motor_encoders()
 
         # Wheels (assumes all wheels have the same radius)
-        self.wheel_radius = wheel_radius
-        self.wheel_circumference = 2 * np.pi * self.wheel_radius  # cm
+        self.wheel_circumference = 2 * np.pi * wheel_radius  # cm
         self.turning_constant = 0.135  # convert motor encoder difference to orientation
+        self.turning_gain = 5
 
         # Motor Speeds
         self.max_dps = get_dps(max_speed, wheel_radius)
@@ -90,7 +91,7 @@ class Gears(BrickPi3):
         self.on = False  # Is GEARS on?
         self.buffer_time = buffer_time  # time between cycles (seconds)
         self.mode = mode  # current mode
-        self.mode_list = ['auto', 'manual', 'waypoint']  # list of known modes
+        self.mode_list = ['auto', 'walls', 'point_turn', 'waypoint', 'manual']  # list of known modes
 
     # Reset a single motor encoder to 0
     def reset_encoder(self, port):
@@ -115,14 +116,12 @@ class Gears(BrickPi3):
     # Turn 90 degrees left
     def turn_left(self):
         if not self.turning:
-            self.heading += 90
-            self.turning = True
+            self.set_heading(self.heading + 90, turn=True)
 
     # Turn 90 degrees right
     def turn_right(self):
         if not self.turning:
-            self.heading -= 90
-            self.turning = True
+            self.set_heading(self.heading + 90, turn=True)
 
     # Do not move
     def stop(self):
@@ -133,11 +132,10 @@ class Gears(BrickPi3):
     def correct_orientation(self):
         # Use proportional control to minimize the difference between the orientation
         # and desired heading of GEARS
-        gain = 5
 
         if self.turning:
             error = self.heading - self.orientation
-            dps = gain * error
+            dps = self.turning_gain * error
 
             # limit the dps of the motors
             dps = min(self.max_dps, max(-1 * self.max_dps, dps))
@@ -153,10 +151,13 @@ class Gears(BrickPi3):
                 self.stop()
                 self.turning = False
 
+    # Pause the program until the turn is complete
+    # Only use for calibration and troubleshooting
     def wait_for_turn(self):
         while self.turning:
             self.correct_orientation()
 
+    # record hazard in a dataframe
     def record_hazard(self, hazard_type, parameter, value, x, y):
 
         # Create new row
@@ -165,12 +166,14 @@ class Gears(BrickPi3):
         # Insert new row
         self.hazards = pd.concat([self.hazards, new_entry], ignore_index=True)
 
+    # get the coordinates of the tile adjacent to GEARS in a certain direction
     def get_neighbor_coordinates(self, direction):
         x_position = self.x_position + self.tile_width * np.cos(np.radians(self.orientation + direction))
         y_position = self.y_position + self.tile_width * np.sin(np.radians(self.orientation + direction))
         x_coordinate, y_coordinate = self.position_to_coordinates(x_position, y_position)
         return x_coordinate, y_coordinate
 
+    # detect walls with the ultrasonic sensor and record them on the map
     def detect_walls(self):
 
         # Get wall distance
@@ -201,6 +204,7 @@ class Gears(BrickPi3):
         else:
             self.update_map(right_x, right_y, CLEAR)
 
+    # default behavior when not following path
     def avoid_walls(self):
         r = round(self.row - np.sin(np.radians(self.heading)))
         c = round(self.col + np.cos(np.radians(self.heading)))
@@ -215,6 +219,7 @@ class Gears(BrickPi3):
         if front_mark == WALL:
             self.turn_left()
 
+    # expand the map to include the given row and column indices
     def expand_map(self, row, col):
         num_rows = len(self.map)
         num_cols = len(self.map[0])
@@ -253,31 +258,31 @@ class Gears(BrickPi3):
     def position_to_coordinates(self, x_position, y_position):
         x_coordinate = x_position / self.tile_width
         y_coordinate = y_position / self.tile_width
-
         return x_coordinate, y_coordinate
 
+    # Convert coordinates (tile widths) to position (cm)
     def coordinates_to_position(self, x_coordinate, y_coordinate):
         return self.tile_width * x_coordinate, self.tile_width * y_coordinate
 
     # Convert coordinates (tile widths) to row and column indices
     def coordinates_to_indices(self, x_coordinate, y_coordinate):
-        # Get the current row and col indices of GEARS
         row = round(self.origin_row - y_coordinate)
         col = round(self.origin_col + x_coordinate)
-
         return row, col
 
+    # Convert indices to coordinates (tile widths)
     def indices_to_coordinates(self, row, col):
         y_coordinate = self.origin_row - row
         x_coordinate = col - self.origin_col
-
         return x_coordinate, y_coordinate
 
+    # Convert position (cm) to indices
     def position_to_indices(self, x_position, y_position):
         x_coordinate, y_coordinate = self.position_to_coordinates(x_position, y_position)
         row, col = self.coordinates_to_indices(x_coordinate, y_coordinate)
         return row, col
 
+    # Convert indices to position (cm)
     def indices_to_position(self, row, col):
         x_coordinate, y_coordinate = self.indices_to_coordinates(row, col)
         x_position, y_position = self.coordinates_to_position(x_coordinate, y_coordinate)
@@ -288,11 +293,12 @@ class Gears(BrickPi3):
         # If GEARS is turning, do not update its position
         if self.turning:
             return
-        # Get position of the left and right motors (measured in degrees)
+
+        # Get the position of the left and right motors (measured in degrees)
         left_encoder = self.get_motor_encoder(self.left_wheel)
         right_encoder = self.get_motor_encoder(self.right_wheel)
 
-        # Determine how much the positions of the left and right motors have changed
+        # Determine how far the left and right motors have turned
         # since the last cycle
         left_change = left_encoder - self.prev_left_encoder
         right_change = right_encoder - self.prev_right_encoder
@@ -319,19 +325,20 @@ class Gears(BrickPi3):
         # Mark GEARS on map
         self.update_map(self.x_coordinate, self.y_coordinate, GEARS)
 
+    # Track the orientation of GEARS based on the difference between the left and right motor encoders
     def update_orientation(self):
 
-        # Position of the left wheels in degrees
+        # Position of the left wheel in degrees
         left_encoder = self.get_motor_encoder(self.left_wheel)
 
-        # Position of the right wheels in degrees
+        # Position of the right wheel in degrees
         right_encoder = self.get_motor_encoder(self.right_wheel)
 
-        # the orientation of GEARS should be a constant multiple of the difference in motor encoder values
+        # the orientation of GEARS is a constant multiple of the difference between the motor encoder values
+        # find the turning constant during calibration
         self.orientation = self.turning_constant * (right_encoder - left_encoder)
 
     # Mark the current position of GEARs on the map
-    # Assumes GEARS started in the lower left hand corner of the map
     def update_map(self, x_coordinate, y_coordinate, mark):
         row, col = self.coordinates_to_indices(x_coordinate, y_coordinate)
 
@@ -360,8 +367,13 @@ class Gears(BrickPi3):
                 # Do not overwrite that mark
                 return
 
+        # If marking the lead
+        if mark == LEAD:
+            self.map[self.map == LEAD] = PATH  # Clear previous lead
+
         self.map[row][col] = mark
 
+    # Display a polished map output
     def display_map(self):
         map_copy = self.map.copy()
         map_copy[map_copy == ORIGIN] = PATH
@@ -372,56 +384,12 @@ class Gears(BrickPi3):
             print(*row, sep=', ', end='|\n')
         print('---' * len(map_copy[0]))
 
-    def set_heading(self, degrees):
+    # Set the heading and turn to face it
+    def set_heading(self, degrees, turn=False):
         self.heading = degrees % 360
-        self.turning = True
+        self.turning = turn
 
-    def point_turn(self):
-        self.heading = float(input('Enter the desired angle: '))
-        self.turning = True
-
-    def mark_waypoint(self, x_coordinate, y_coordinate):
-        self.map[self.map == WAYPOINT] = UNKNOWN  # Clear previous waypoint
-
-        self.update_map(x_coordinate, y_coordinate, WAYPOINT)
-
-    def goto_waypoint(self):
-        r, c = np.where(self.map == WAYPOINT)
-
-        try:
-            row = r[0]
-            col = c[0]
-
-        # Either there was no waypoint or GEARS reached the waypoint and
-        # the waypoint mark was replaced with the GEARS mark
-        except IndexError:
-            # Stop
-            self.stop()
-            # Exit
-            return
-
-        # Get the coordinates of the waypoint
-        x_position, y_position = self.indices_to_position(row, col)
-
-        if abs(self.x_position - x_position) > 1:
-            delta_x = x_position - self.x_position
-            delta_y = 0
-        elif abs(self.y_position - y_position) > 1:
-            delta_x = 0
-            delta_y = y_position - self.y_position
-        else:
-            return
-
-        self.heading = np.degrees(np.arctan2(delta_y, delta_x))
-
-        if abs(self.orientation - self.heading) > 1:
-            self.turning = True
-
-        # Move toward the waypoint
-        # correct_orientation should be called later to ensure GEARS is facing the
-        # correct direction
-        self.move_forward()
-
+    # Get the nearest unexplored point that is accessible to gears
     def get_nearest_unknown(self):
         points = []
         find_unknowns(self.map, self.row, self.col, points)
@@ -438,6 +406,92 @@ class Gears(BrickPi3):
                 min_distance = distance
         return nearest_point
 
+    # Set the new target equal to the nearest unknown point
+    def get_new_target(self):
+
+        # Get the nearest unknown point on the map
+        nearest_unknown = self.get_nearest_unknown()
+
+        # If an unknown point was found
+        if nearest_unknown is not None:
+
+            # set the target to the unknown point
+            self.target_x, self.target_y = self.indices_to_coordinates(*nearest_unknown)
+
+            # mark the target on the map
+            self.update_map(self.target_x, self.target_y, TARGET)
+
+    # Get the path from GEARS to the target
+    def update_path(self):
+
+        # Construct a graph to represent the map
+        num_rows = len(self.map)
+        num_cols = len(self.map[0])
+        graph = grid_graph(num_rows, num_cols)
+
+        source = (self.x_coordinate, self.y_coordinate)  # start at GEARS
+        target = (self.target_x, self.target_y)  # end at target
+
+        # Any points other than the previously traveled path, the current location of gears, and the target may be walls
+        # and therefore should not be included in the path
+        unsafe_points = np.array(np.where(self.map != PATH and self.map != GEARS and self.map != TARGET)).T
+
+        # remove the unsafe points from the graph
+        for point in unsafe_points:
+            graph = remove_node(graph, point, num_cols)
+
+        # find a path from GEARS to the target that includes only previously explored points
+        self.path = find_path(graph, source, target, num_cols)
+
+    # Set lead to the correct point on the path
+    def update_lead(self):
+
+        # if gears has reached the lead
+        if self.near(self.lead_x, self.lead_y):
+
+            # move the lead to the next point on the path
+            self.path_index += 1
+
+        # set the lead to a point on the path
+        self.lead_x, self.lead_y = self.path[self.path_index]
+
+    # Move to the lead (no diagonals)
+    def follow_lead(self):
+        x_position, y_position = self.coordinates_to_position(self.lead_x, self.lead_y)
+
+        # if GEARS is more than 1 cm away from the lead in the x direction
+        if not np.isclose(self.x_position, x_position, 0, 1):
+            delta_x = x_position - self.x_position
+            delta_y = 0
+
+        # if GEARS is more than 1 cm away from the lead in the y direction
+        elif not np.isclose(self.y_position, y_position, 0, 1):
+            delta_x = 0
+            delta_y = y_position - self.y_position
+
+        # if GEARS is within 1 cm of the lead in both directions, do nothing
+        else:
+            return
+
+        # get the heading
+        heading = np.degrees(np.arctan2(delta_y, delta_x))
+
+        # turn if the orientation is not within 0.5 degrees of the heading
+        turn = not np.close(self.orientation, self.heading, 0, 0.5)
+
+        self.set_heading(heading, turn=turn)
+
+        # move forward toward the lead
+        # correct_orientation should be called later to ensure GEARS is facing the
+        # correct direction
+        self.move_forward()
+
+    # Determine if GEARS is near (x_coordinate, y_coordinate) within a certain tolerance
+    def near(self, x_coordinate, y_coordinate, tolerance):
+        return np.isclose(self.x_coordinate, x_coordinate, 0, tolerance) and \
+            np.isclose(self.y_coordinate, y_coordinate, 0, tolerance)
+
+    # Determine the turning constant
     def calibrate_turns(self):
 
         # Get the turning constant from the user
@@ -449,7 +503,7 @@ class Gears(BrickPi3):
         self.orientation = 0
 
         # Turn 180 degrees
-        self.set_heading(180)
+        self.set_heading(180, turn=True)
         self.wait_for_turn()
 
         left_encoder = self.get_motor_encoder(self.left_wheel)
@@ -459,72 +513,6 @@ class Gears(BrickPi3):
         print('Turning constant:', self.turning_constant)
         print('Orientation:', self.orientation)
         print('Heading:', self.heading)
-
-    def get_new_target(self):
-        nearest_unknown = self.get_nearest_unknown()  # Get the nearest unknown point on the map
-        # If an unknown point was found
-        if nearest_unknown is not None:
-            self.target_x, self.target_y = self.indices_to_coordinates(*nearest_unknown)
-            self.update_map(self.target_x, self.target_y, TARGET)
-
-    def get_path(self):
-        num_rows = len(self.map)
-        num_cols = len(self.map[0])
-        graph = grid_graph(num_rows, num_cols)
-
-        source = (self.x_coordinate, self.y_coordinate)
-        target = (self.target_x, self.target_y)
-        walls = np.array(np.where(self.map == WALL)).T
-
-        for wall in walls:
-            graph = remove_node(graph, wall, num_cols)
-
-        path = find_path(graph, source, target, num_cols)
-        return path
-
-    def update_lead(self):
-        # if at the target, get a new path
-        if self.at_target():
-            self.path_index = 1
-            target_row, target_col = self.coordinates_to_indices(self.target_x, self.target_y)
-            # Find a path from GEARS to the target
-            self.path = self.get_path()
-
-        elif self.at_lead():
-            self.path_index += 1
-
-        try:
-            self.lead_x, self.lead_y = self.path[self.path_index]
-        except IndexError:
-            self.lead_x, self.lead_y = self.target_x, self.target_y
-
-    def follow_lead(self):
-        x_position, y_position = self.coordinates_to_position(self.lead_x, self.lead_y)
-
-        if abs(self.x_position - x_position) > 1:
-            delta_x = x_position - self.x_position
-            delta_y = 0
-        elif abs(self.y_position - y_position) > 1:
-            delta_x = 0
-            delta_y = y_position - self.y_position
-        else:
-            return
-
-        self.heading = np.degrees(np.arctan2(delta_y, delta_x))
-
-        if abs(self.orientation - self.heading) > 1:
-            self.turning = True
-
-        # Move toward the waypoint
-        # correct_orientation should be called later to ensure GEARS is facing the
-        # correct direction
-        self.move_forward()
-
-    def at_target(self):
-        return abs(self.x_coordinate - self.target_x) < 0.1 and abs(self.y_coordinate - self.target_y) < 0.1
-
-    def at_lead(self):
-        return abs(self.x_coordinate - self.lead_x) < 0.1 and abs(self.y_coordinate - self.lead_y) < 0.1
 
     # Set dps for all motors
     # This is the only method that interfaces directly with the motors
@@ -564,19 +552,70 @@ class Gears(BrickPi3):
             self.update_position()  # Get the new position of GEARS
 
             # MODE DEPENDENT METHODS
+            # main demo, Task 5 (no cargo), and Integration Task 5/6 (cargo)
             if self.mode == 'auto':
                 self.detect_walls()  # Detect walls with the ultrasonic sensor and mark them on the map
-                if self.at_target():
-                    self.get_new_target()
-                self.update_lead()
+
+                # If at the target
+                if self.near(self.target_x, self.target_y, 0.1):
+                    self.get_new_target()  # get a new target
+                    self.update_path()  # get a path to the new target
+                    self.path_index = 1  # reset the path index
+
+                self.update_lead()  # move the lead to the next coordinate on the path
+                self.follow_lead()  # move GEARS to the lead
+
+            # Task 1 and Integration Task 1/2
+            elif self.mode == 'walls':
+
+                # Avoid hitting the walls
+                self.avoid_walls()
+
+            # Task 2 (no cargo) and Task 6 (cargo)
+            elif self.mode == 'point_turn':
+
+                # get a heading from the user
+                angle = float(input('Enter the desired angle: '))
+
+                # turn to face that heading
+                self.set_heading(angle, turn=True)
+
+            # TODO: PoC Task 3, Avoid Hazards
+            # 1. Get the magnetic sensor working
+            # 2. Create vector fields for the magnetic field
+            # 3. Determine direction of magnet from vector field
+            # 4. Determine distance from magnitude of vector field
+            # 5. Mark magnet on map
+            # 6. Surround magnet with walls out to specified radius
+            # 7. Experiment with IR sensor
+            # 8. Mark IR beacon on the map
+            # 9. Surround IR beacon with walls out to specified radius
+            # 10. Integrate with path finding algorithm to navigate around hazards
+            # 11. Get the target from the user
+
+            # PoC Task 4
+            # TODO: Integrate with path finding system
+            # Should be able to get target from user and navigate to that target intelligently
+            # Differs from main demo because target may be well beyond the explored area of map
+            # Will have to update path while exploring to navigate around walls as they are discovered
+            elif self.mode == 'waypoint':
+
+                # get an x, y coordinate pair from the user
+                self.lead_x = float(input('Enter the x-coordinate: '))
+                self.lead_y = float(input('Enter the y-coordinate: '))
+
+                # mark the coordinate on the map
+                self.update_map(self.lead_x, self.lead_y, LEAD)
+
+                # go to the coordinate
                 self.follow_lead()
 
-            elif self.mode == 'waypoint':
-                self.goto_waypoint()
+            # for testing
             elif self.mode == 'manual':
                 pass
 
             self.correct_orientation()  # Make GEARS turn to face the desired heading
+
         # If GEARS is off
         else:
             self.stop()
