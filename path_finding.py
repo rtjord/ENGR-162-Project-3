@@ -3,21 +3,20 @@ from scipy.sparse import csr_matrix
 import numpy as np
 
 
-WALL = '!'
-CLEAR = ' '
-UNKNOWN = 'U'
-
-
-# Convert graph index to x, y coordinates
-def graph_index_to_coordinates(index, num_cols):
-    x = index % num_cols
-    y = int(index / num_cols)
+# Convert node index to x, y coordinates
+def node_index_to_coordinates(index, num_cols, origin=(0, 0)):
+    origin_x = origin[0]
+    origin_y = origin[1]
+    x = index % num_cols - origin_x
+    y = int(index / num_cols) - origin_y
     return x, y
 
 
-# Convert x, y coordinates to graph index
-def graph_coordinates_to_index(x, y, num_cols):
-    return x + num_cols * y
+# Convert x, y coordinates to node index
+def coordinates_to_node_index(x, y, num_cols, origin=(0, 0)):
+    origin_x = origin[0]
+    origin_y = origin[1]
+    return (x + origin_x) + num_cols * (y + origin_y)
 
 
 # Create a grid graph with dimensions m by n
@@ -31,9 +30,9 @@ def grid_graph(m, n):
 
     # Compare the x and y coordinates of each node to those of every other node
     for i1 in range(num_edges):
-        x1, y1 = graph_index_to_coordinates(i1, n)
+        x1, y1 = node_index_to_coordinates(i1, n)
         for i2 in range(num_edges):
-            x2, y2 = graph_index_to_coordinates(i2, n)
+            x2, y2 = node_index_to_coordinates(i2, n)
 
             # if the nodes are the same
             if x1 == x2 and y1 == y2:
@@ -59,14 +58,14 @@ def grid_graph(m, n):
 
 
 # remove node = (x, y) from the graph
-def remove_node(graph, node, num_cols):
+def remove_node(graph, node, num_cols, origin):
 
     # get x and y coordinates of node to remove
     x = node[0]
     y = node[1]
 
     # get index of node to remove
-    index = graph_coordinates_to_index(x, y, num_cols)
+    index = coordinates_to_node_index(x, y, num_cols, origin)
 
     # get edge array for graph
     arr = graph.toarray()
@@ -82,16 +81,31 @@ def remove_node(graph, node, num_cols):
     return graph
 
 
+def find_nearest_unknown(graph, source, num_cols, origin, known_points):
+    start_index = coordinates_to_node_index(source[0], source[1], num_cols, origin)
+    distance_matrix, predecessors = dijkstra(graph, directed=False, indices=start_index, return_predecessors=True)
+
+    nearest_index = distance_matrix.index(min(distance_matrix))
+    nearest_point = node_index_to_coordinates(nearest_index, num_cols, origin)
+
+    while nearest_point in known_points:
+        distance_matrix[nearest_index] = np.inf
+        nearest_index = distance_matrix.index(min(distance_matrix))
+        nearest_point = node_index_to_coordinates(nearest_index, num_cols, origin)
+
+    return nearest_point
+
+
 # find a path from the source to the target
-def find_path(graph, source, target, num_cols):
+def find_path(graph, source, target, num_cols, origin):
     path = []  # initialize path
 
     # get the graph indices for the source and target
-    start_index = graph_coordinates_to_index(source[0], source[1], num_cols)
-    target_index = graph_coordinates_to_index(target[0], target[1], num_cols)
+    start_index = coordinates_to_node_index(source[0], source[1], num_cols, origin)
+    target_index = coordinates_to_node_index(target[0], target[1], num_cols, origin)
 
     # find paths from start_index to all the other points in the graph
-    distance_matrix, predecessors = dijkstra(graph, indices=start_index, return_predecessors=True)
+    distance_matrix, predecessors = dijkstra(graph, directed=False, indices=start_index, return_predecessors=True)
 
     # start at target and work backwards to find path from target to source
     while target_index != start_index and target_index != -9999:
@@ -102,38 +116,8 @@ def find_path(graph, source, target, num_cols):
     path.append(start_index)
 
     # convert graph indices to x, y coordinates
-    path = [graph_index_to_coordinates(index, num_cols) for index in path]
+    path = [node_index_to_coordinates(index, num_cols, origin) for index in path]
 
     # reverse to get path from source to target
     path.reverse()
     return path
-
-
-# must pass a list for points
-def find_unknowns(arr, row, col, points):
-
-    # make a copy of the array to edit
-    arr = arr.copy()
-
-    # Check out of bounds
-    if row < 0 or row >= len(arr) or col < 0 or col >= len(arr[0]):
-        return
-
-    # Ran into wall
-    if arr[row][col] == WALL:
-        return
-
-    # found unknown
-    if arr[row][col] == UNKNOWN:
-        points.append((row, col))
-        return
-
-    # prevent doubling back
-    arr[row][col] = WALL
-
-    # return coordinates if at an unexplored area
-    find_unknowns(arr, row + 1, col, points)
-    find_unknowns(arr, row - 1, col, points)
-    find_unknowns(arr, row, col + 1, points)
-    find_unknowns(arr, row, col - 1, points)
-    return

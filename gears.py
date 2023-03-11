@@ -3,7 +3,7 @@ import numpy as np
 from time import sleep
 import pandas as pd
 from helpers import get_dps, read_ultrasonic, get_distance
-from path_finding import find_unknowns, grid_graph, remove_node, find_path
+from path_finding import grid_graph, remove_node, find_nearest_unknown, find_path
 
 
 # ORIGIN = 3
@@ -68,8 +68,8 @@ class Gears(BrickPi3):
         self.origin_col = 0  # column of start position on map array
         self.x_position = 0  # cm right of the origin
         self.y_position = 0  # cm left of the origin
-        self.x_coordinate = 0 # tile widths right of origin
-        self.y_coordinate = 0 # tile widths above origin
+        self.x_coordinate = 0  # tile widths right of origin
+        self.y_coordinate = 0  # tile widths above origin
         self.row = 0  # current row of GEARS on map
         self.col = 0  # current column of GEARS on map
         self.orientation = 0  # actual orientation (degrees)
@@ -79,13 +79,13 @@ class Gears(BrickPi3):
         self.prev_left_encoder = 0  # value of left encoder from previous cycle
         self.prev_right_encoder = 0  # value of right encoder from previous cycle
         self.tile_width = 40  # width of a tile on the map (cm)
-        self.hazards = pd.DataFrame(columns=['type', 'parameter', 'value', 'x', 'y'])
+        self.path = []
         self.target_x = self.x_coordinate
         self.target_y = self.y_coordinate
         self.lead_x = self.x_coordinate
         self.lead_y = self.y_coordinate
-        self.path = []
-        self.path_index = 0
+        self.path_index = 1
+        self.hazards = pd.DataFrame(columns=['type', 'parameter', 'value', 'x', 'y'])
 
         # ADDITIONAL ATTRIBUTES
         self.on = False  # Is GEARS on?
@@ -389,59 +389,44 @@ class Gears(BrickPi3):
         self.heading = degrees % 360
         self.turning = turn
 
-    # Get the nearest unexplored point that is accessible to gears
-    def get_nearest_unknown(self):
-        points = []
-        find_unknowns(self.map, self.row, self.col, points)
-        if len(points) == 0:
-            return None
-        nearest_point = np.array(points[0])
-        gears = np.array([self.row, self.col])
-        min_distance = get_distance(gears, nearest_point)
-        for point in points:
-            np.array(point)
-            distance = get_distance(gears, point)
-            if distance < min_distance:
-                nearest_point = point
-                min_distance = distance
-        return nearest_point
+    # Get a new path from GEARS to the nearest unknown point
+    def get_new_path(self):
 
-    # Set the new target equal to the nearest unknown point
-    def get_new_target(self):
-
-        # Get the nearest unknown point on the map
-        nearest_unknown = self.get_nearest_unknown()
-
-        # If an unknown point was found
-        if nearest_unknown is not None:
-
-            # set the target to the unknown point
-            self.target_x, self.target_y = self.indices_to_coordinates(*nearest_unknown)
-
-            # mark the target on the map
-            self.update_map(self.target_x, self.target_y, TARGET)
-
-    # Get the path from GEARS to the target
-    def update_path(self):
-
-        # Construct a graph to represent the map
+        # construct a graph to represent the map
         num_rows = len(self.map)
         num_cols = len(self.map[0])
         graph = grid_graph(num_rows, num_cols)
 
+        # Get the indices of marks of the map
+        walls = np.array(np.where(self.map == WALL)).T
+        origin = np.array(np.where(self.map == ORIGIN)).T
+        path_points = np.array(np.where(self.map == PATH)).T
+        gears = np.array(np.where(self.map == GEARS)).T
+
+        # indices of all known points
+        known_points = np.concatenate((origin, path_points, gears))
+
+        # convert indices to coordinates
+        known_points = [self.indices_to_coordinates(row, col) for row, col in known_points]
+
+        # x and y coordinates of origin relative to bottom left corner of map
+        origin = (len(self.map) - self.origin_row, self.origin_col)
+
+        # remove the walls from the graph
+        for wall in walls:
+            graph = remove_node(graph, wall, num_cols, origin)
+
         source = (self.x_coordinate, self.y_coordinate)  # start at GEARS
-        target = (self.target_x, self.target_y)  # end at target
 
-        # Any points other than the previously traveled path, the current location of gears, and the target may be walls
-        # and therefore should not be included in the path
-        unsafe_points = np.array(np.where(self.map != PATH and self.map != GEARS and self.map != TARGET)).T
+        # set target to the nearest unknown point
+        self.target_x, self.target_y = find_nearest_unknown(graph, source, num_cols, origin, known_points)
+        target = (self.target_x, self.target_y)
 
-        # remove the unsafe points from the graph
-        for point in unsafe_points:
-            graph = remove_node(graph, point, num_cols)
+        # find a path from GEARS to the target
+        self.path = find_path(graph, source, target, num_cols, origin)
 
-        # find a path from GEARS to the target that includes only previously explored points
-        self.path = find_path(graph, source, target, num_cols)
+        self.lead_x, self.lead_y = self.path[1]
+        self.path_index = 1
 
     # Set lead to the correct point on the path
     def update_lead(self):
@@ -558,9 +543,9 @@ class Gears(BrickPi3):
 
                 # If at the target
                 if self.near(self.target_x, self.target_y, 0.1):
-                    self.get_new_target()  # get a new target
-                    self.update_path()  # get a path to the new target
-                    self.path_index = 1  # reset the path index
+
+                    # Get a new path
+                    self.get_new_path()
 
                 self.update_lead()  # move the lead to the next coordinate on the path
                 self.follow_lead()  # move GEARS to the lead
