@@ -361,6 +361,7 @@ class VirtualGears:
     def display_map(self):
         map_copy = self.map.copy()
         map_copy[map_copy == ORIGIN] = PATH
+        map_copy[map_copy == GEARS] = PATH
         map_copy[map_copy != PATH] = CLEAR
         print('---' * len(map_copy[0]))
         for row in map_copy:
