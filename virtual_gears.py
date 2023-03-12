@@ -1,10 +1,8 @@
-from brickpi3 import BrickPi3
-import numpy as np
 from time import sleep
+import numpy as np
 import pandas as pd
 from helpers import get_dps
 from path_finding import *
-from hardware import read_ultrasonic
 
 
 # ORIGIN = 3
@@ -31,21 +29,23 @@ BACK = 180
 RIGHT = 270
 
 
-class Gears(BrickPi3):
-    def __init__(self, mode='auto', max_speed=15, wheel_radius=3, buffer_time=0.01):
+def read_ultrasonic(direction):
+    if direction == RIGHT:
+        return 20
+    return np.inf
 
-        # Initialize parent class
-        BrickPi3.__init__(self)
+
+class VirtualGears:
+    def __init__(self, mode='auto', max_speed=50, wheel_radius=3, buffer_time=0.01):
 
         # MOTORS AND WHEELS
         # Assign wheels to BrickPi ports
-        self.left_wheel = self.PORT_D
-        self.right_wheel = self.PORT_A
+        self.left_wheel = None
+        self.right_wheel = None
 
-        self.all_motors = self.left_wheel + self.right_wheel
-
-        # Reset all motor encoders to 0
-        self.reset_motor_encoders()
+        # reset motor encoders to 0
+        self.left_encoder = 0
+        self.right_encoder = 0
 
         # Wheels (assumes all wheels have the same radius)
         self.wheel_circumference = 2 * np.pi * wheel_radius  # cm
@@ -59,9 +59,9 @@ class Gears(BrickPi3):
 
         # SENSORS
         # Ultrasonic Sensor
-        self.front_ultrasonic = 2
-        self.left_ultrasonic = 3
-        self.right_ultrasonic = 7
+        self.front_ultrasonic_reading = np.inf
+        self.left_ultrasonic_reading = np.inf
+        self.right_ultrasonic_reading = np.inf
 
         # MAP
         self.map = np.array([[ORIGIN]])  # Initialize the map
@@ -88,21 +88,16 @@ class Gears(BrickPi3):
         self.path_index = 1
         self.path_fails = 0
         self.hazards = pd.DataFrame(columns=['type', 'parameter', 'value', 'x', 'y'])
-
         # ADDITIONAL ATTRIBUTES
         self.on = False  # Is GEARS on?
         self.buffer_time = buffer_time  # time between cycles (seconds)
         self.mode = mode  # current mode
         self.mode_list = ['auto', 'walls', 'point_turn', 'waypoint', 'manual']  # list of known modes
 
-    # Reset a single motor encoder to 0
-    def reset_encoder(self, port):
-        self.offset_motor_encoder(port, self.get_motor_encoder(port))
-
     # Reset all motor encoders to 0
     def reset_motor_encoders(self):
-        self.reset_encoder(self.left_wheel)
-        self.reset_encoder(self.right_wheel)
+        self.left_encoder = 0
+        self.right_encoder = 0
 
     # BASIC MOVEMENT METHODS
     # Move straight forward at a constant speed
@@ -179,9 +174,9 @@ class Gears(BrickPi3):
     def detect_walls(self):
 
         # Get wall distance
-        front_distance = read_ultrasonic(self.front_ultrasonic)
-        left_distance = read_ultrasonic(self.left_ultrasonic)
-        right_distance = read_ultrasonic(self.right_ultrasonic)
+        front_distance = read_ultrasonic(FRONT)
+        left_distance = read_ultrasonic(LEFT)
+        right_distance = read_ultrasonic(RIGHT)
 
         # Get the coordinates of the tiles that sensors are pointing at
         front_x, front_y = self.get_neighbor_coordinates(FRONT)
@@ -296,14 +291,10 @@ class Gears(BrickPi3):
         if self.turning:
             return
 
-        # Get the position of the left and right motors (measured in degrees)
-        left_encoder = self.get_motor_encoder(self.left_wheel)
-        right_encoder = self.get_motor_encoder(self.right_wheel)
-
         # Determine how far the left and right motors have turned
         # since the last cycle
-        left_change = left_encoder - self.prev_left_encoder
-        right_change = right_encoder - self.prev_right_encoder
+        left_change = self.left_encoder - self.prev_left_encoder
+        right_change = self.right_encoder - self.prev_right_encoder
 
         average_change = (left_change + right_change) / 2
 
@@ -315,8 +306,8 @@ class Gears(BrickPi3):
         self.y_position += delta * np.sin(np.radians(self.heading))
 
         # Record the encoder values to use for reference on the next cycle
-        self.prev_left_encoder = left_encoder
-        self.prev_right_encoder = right_encoder
+        self.prev_left_encoder = self.left_encoder
+        self.prev_right_encoder = self.right_encoder
 
         # Convert position to coordinates
         self.x_coordinate, self.y_coordinate = self.position_to_coordinates(self.x_position, self.y_position)
@@ -327,15 +318,9 @@ class Gears(BrickPi3):
     # Track the orientation of GEARS based on the difference between the left and right motor encoders
     def update_orientation(self):
 
-        # Position of the left wheel in degrees
-        left_encoder = self.get_motor_encoder(self.left_wheel)
-
-        # Position of the right wheel in degrees
-        right_encoder = self.get_motor_encoder(self.right_wheel)
-
         # the orientation of GEARS is a constant multiple of the difference between the motor encoder values
         # find the turning constant during calibration
-        self.orientation = self.turning_constant * (right_encoder - left_encoder)
+        self.orientation = self.turning_constant * (self.right_encoder - self.left_encoder)
 
     # Mark the current position of GEARs on the map
     def update_map(self, x_coordinate, y_coordinate, mark):
@@ -411,13 +396,11 @@ class Gears(BrickPi3):
         # remove the walls from the graph
         for node in wall_nodes:
             graph = remove_node(graph, node, num_cols)
-
         # convert gears indices to node
         source_node = indices_to_node(self.row, self.col, num_rows)
 
         # set target to the nearest unknown point
         target_node = find_nearest_unknown(graph, source_node, num_cols, known_nodes)
-
         # if an unknown point could not be found
         if target_node is None:
 
@@ -445,6 +428,7 @@ class Gears(BrickPi3):
             # GEARS should be able to reach one of the unknown tiles on the expanded map
             return
 
+        self.path_fails = 0
         # convert target node to coordinates
         target_row, target_col = node_to_indices(target_node[0], target_node[1], num_rows)
         self.target_x, self.target_y = self.indices_to_coordinates(target_row, target_col)
@@ -463,6 +447,7 @@ class Gears(BrickPi3):
 
         # If the path contains more than the current node
         if len(self.path) >= 2:
+
             # Set the lead to the next node on the path
             self.lead_x, self.lead_y = self.path[1]
         self.path_index = 1
@@ -472,12 +457,12 @@ class Gears(BrickPi3):
 
         # if gears has reached the lead
         if self.near(self.lead_x, self.lead_y, 0.1):
-
             # move the lead to the next point on the path
             self.path_index += 1
 
         # if GEARS has not reached the end of the path
         if self.path_index < len(self.path):
+
             # set the lead to a point on the path
             self.lead_x, self.lead_y = self.path[self.path_index]
 
@@ -533,9 +518,7 @@ class Gears(BrickPi3):
         self.set_heading(180, turn=True)
         self.wait_for_turn()
 
-        left_encoder = self.get_motor_encoder(self.left_wheel)
-        right_encoder = self.get_motor_encoder(self.right_wheel)
-        difference = right_encoder - left_encoder
+        difference = self.right_encoder - self.left_encoder
         print('Encoder difference:', difference, 'degrees')
         print('Turning constant:', self.turning_constant)
         print('Orientation:', self.orientation)
@@ -551,16 +534,15 @@ class Gears(BrickPi3):
             # Do not update the motor dps values
             return
 
-        # Update the motor dps values
-        self.set_motor_dps(self.left_wheel, self.left_dps)
-        self.set_motor_dps(self.right_wheel, self.right_dps)
+        # Update the motor encoder values
+        self.left_encoder += self.left_dps * self.buffer_time
+        self.right_encoder += self.right_dps * self.buffer_time
 
     # Turn off and reset all motors
     def exit(self):
         self.on = False
         self.stop()
         self.update_motors()
-        self.reset_all()
 
     # Main logic for the rover during the primary demonstration
     # Later method calls have higher priority
@@ -629,8 +611,8 @@ class Gears(BrickPi3):
             elif self.mode == 'waypoint':
 
                 # get an x, y coordinate pair from the user
-                self.lead_x = float(input('Enter the x-coordinate: '))
-                self.lead_y = float(input('Enter the y-coordinate: '))
+                # self.lead_x = float(input('Enter the x-coordinate: '))
+                # self.lead_y = float(input('Enter the y-coordinate: '))
 
                 # mark the coordinate on the map
                 self.update_map(self.lead_x, self.lead_y, LEAD)

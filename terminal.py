@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 from threading import Thread
-from dummy_classes import VirtualGears
+from virtual_gears import VirtualGears
 
 
 # Cast var to a new data type

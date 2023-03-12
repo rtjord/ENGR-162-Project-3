@@ -11,9 +11,9 @@ CLEAR = ' '
 TARGET = 'T'
 
 arr = np.array([['U', '!', ' '],
-                ['!', '!', '!'],
+                ['U', '!', 'U'],
                 ['!', 'G', '!'],
-                ['!', 'X', '!'],
+                ['U', '!', 'U'],
                 ['X', 'X', ' '],
                 [' ', 'X', ' '],
                 [' ', 'X', 'U'],
@@ -49,7 +49,8 @@ source_node = indices_to_node(2, 1, num_rows)  # start at GEARS
 
 # set target to the nearest unknown node
 target_node = find_nearest_unknown(graph, source_node, num_cols, known_nodes)
-if target_node == None:
+print(target_node)
+if target_node is None:
     print('Could not locate unknown point. Expanding map.')
     arr = np.pad(arr, [(1, 1), (1, 1)], mode='constant', constant_values=UNKNOWN)
     print(arr)
