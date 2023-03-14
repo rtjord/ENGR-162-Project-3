@@ -2,6 +2,7 @@
 
 from threading import Thread
 from virtual_gears import VirtualGears
+import os
 
 
 # Cast var to a new data type
@@ -53,6 +54,7 @@ class Terminal:
                          'list': self.list_cmd,
                          'log': self.log_cmd,
                          'reset': self.reset_cmd,
+                         'clear': self.clear_cmd,
                          'exit': self.exit}
 
         self.active = True  # set false to deactivate the terminal
@@ -227,6 +229,10 @@ class Terminal:
     # Reset the object
     def reset_cmd(self):
         self.obj.__init__()
+
+    def clear_cmd(self):
+        os.system("cls")
+        self.print_commands()
 
     # Exit the terminal
     def exit(self, *args):

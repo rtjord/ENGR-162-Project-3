@@ -22,21 +22,27 @@ TARGET = 'T'
 WALL = '!'
 CLEAR = ' '
 UNKNOWN = 'U'
+HEAT = 'H'
+MAGNET = 'M'
 
 FRONT = 0
 LEFT = 90
 BACK = 180
 RIGHT = 270
 
+RESET = '\033[0m'
+GREEN = '\033[32m'
+RED = '\033[31m'
+BLUE = '\033[34m'
+CYAN = '\033[36m'
+
 
 def read_ultrasonic(direction):
-    if direction == RIGHT:
-        return 20
     return np.inf
 
 
 class VirtualGears:
-    def __init__(self, mode='auto', max_speed=50, wheel_radius=3, buffer_time=0.01):
+    def __init__(self, mode='auto', max_speed=500, wheel_radius=3, buffer_time=0.01):
 
         # MOTORS AND WHEELS
         # Assign wheels to BrickPi ports
@@ -50,7 +56,7 @@ class VirtualGears:
         # Wheels (assumes all wheels have the same radius)
         self.wheel_circumference = 2 * np.pi * wheel_radius  # cm
         self.turning_constant = 0.135  # convert motor encoder difference to orientation
-        self.turning_gain = 5
+        self.turning_gain = 100
 
         # Motor Speeds
         self.max_dps = get_dps(max_speed, wheel_radius)
@@ -86,13 +92,15 @@ class VirtualGears:
         self.lead_x = self.x_coordinate
         self.lead_y = self.y_coordinate
         self.path_index = 1
-        self.path_fails = 0
+        self.target_fails = 0
         self.hazards = pd.DataFrame(columns=['type', 'parameter', 'value', 'x', 'y'])
+        self.map_number = 0
+
         # ADDITIONAL ATTRIBUTES
         self.on = False  # Is GEARS on?
         self.buffer_time = buffer_time  # time between cycles (seconds)
         self.mode = mode  # current mode
-        self.mode_list = ['auto', 'walls', 'point_turn', 'waypoint', 'manual']  # list of known modes
+        self.mode_list = ['auto', 'walls', 'point_turn', 'target', 'manual']  # list of known modes
 
     # Reset all motor encoders to 0
     def reset_motor_encoders(self):
@@ -360,22 +368,71 @@ class VirtualGears:
     # Display a polished map output
     def display_map(self):
         map_copy = self.map.copy()
-        map_copy[map_copy == ORIGIN] = PATH
-        map_copy[map_copy == GEARS] = PATH
-        map_copy[map_copy != PATH] = CLEAR
-        print('---' * len(map_copy[0]))
+        print('---' * map_copy.shape[1])
         for row in map_copy:
             print('|', end='')
-            print(*row, sep=', ', end='|\n')
-        print('---' * len(map_copy[0]))
+            for char in row:
+                if char == ORIGIN:
+                    color = CYAN
+                elif char == GEARS:
+                    color = BLUE
+                elif char == PATH:
+                    color = GREEN
+                elif char == WALL:
+                    color = RED
+                else:
+                    color = ''
+
+                print(color + char + RESET + ', ', end='')
+            print('|')
+        print('---' * map_copy.shape[1])
+
+    def write_map(self):
+        output_map = np.zeros(self.map.shape, dtype='int32')
+        output_map[self.map == PATH] = 1
+        output_map[self.map == ORIGIN] = 5
+        output_map[self.map == HEAT] = 2
+        output_map[self.map == MAGNET] = 3
+        output_map[self.map == GEARS] = 4  # exit
+
+        # trim border
+        row_indices, col_indices = np.where(output_map != 0)
+        output_map = output_map[min(row_indices):max(row_indices) + 1, min(col_indices):max(col_indices) + 1]
+
+        with open("output.txt", "w") as f:
+            f.write("Team: 04\n")
+            f.write(f"Map: {self.map_number}\n")
+            f.write(f"Unit length: {self.tile_width}\n")
+            f.write("Unit: cm\n")
+
+            num_rows, num_cols = output_map.shape
+            rows, cols = np.where(output_map == 5)
+            row = rows[0]
+            col = cols[0]
+            x = col
+            y = num_rows - row - 1
+            f.write(f"Origin: ({x}, {y})\n")
+
+            notes = self.get_notes()
+            f.write(notes + '\n')
+
+            for row in range(num_rows):
+                for col in range(num_cols):
+                    f.write(str(output_map[row][col]))
+                    if col < num_cols - 1:
+                        f.write(",")
+                f.write("\n")
+
+    def get_notes(self):
+        notes = str(input('Notes: '))
+        return notes
 
     # Set the heading and turn to face it
     def set_heading(self, degrees, turn=False):
         self.heading = degrees % 360
         self.turning = turn
 
-    # Get a new path from GEARS to the nearest unknown point
-    def get_new_path(self):
+    def construct_graph(self):
 
         # update position to ensure GEARS row and column values are correct
         self.update_position()
@@ -387,37 +444,49 @@ class VirtualGears:
         # Get the indices of walls of the map
         walls = np.array(np.where(self.map == WALL)).T
 
-        # Clear marks are considered known
-        known_indices = np.array(np.where(self.map != UNKNOWN)).T
-
         # convert indices to nodes
         wall_nodes = [indices_to_node(row, col, num_rows) for row, col in walls]
-        known_nodes = [indices_to_node(row, col, num_rows) for row, col in known_indices]
 
         # remove the walls from the graph
         for node in wall_nodes:
             graph = remove_node(graph, node, num_cols)
+
+        return graph
+
+    def set_target(self):
+        self.target_x = float(input('Enter the x-coordinate: '))
+        self.target_y = float(input('Enter the y-coordinate: '))
+        self.update_map(self.target_x, self.target_y, TARGET)
+
+    def get_nearest_unknown(self):
+
+        # construct the graph
+        graph = self.construct_graph()
+        num_rows, num_cols = self.map.shape
+
         # convert gears indices to node
         source_node = indices_to_node(self.row, self.col, num_rows)
 
-        # set target to the nearest unknown point
+        # Clear marks are considered known
+        known_indices = np.array(np.where(self.map != UNKNOWN)).T
+        known_nodes = [indices_to_node(row, col, num_rows) for row, col in known_indices]
+
         target_node = find_nearest_unknown(graph, source_node, num_cols, known_nodes)
-        # if an unknown point could not be found
+
         if target_node is None:
+            return None
 
-            # record the failure
-            self.path_fails += 1
+        # convert target node to coordinates
+        target_row, target_col = node_to_indices(target_node[0], target_node[1], num_rows)
+        target_x, target_y = self.indices_to_coordinates(target_row, target_col)
 
-            # if path finding has failed at least twice in a row
-            if self.path_fails >= 2:
+        return target_x, target_y
 
-                # alert the user on the second failed attempt
-                if self.path_fails == 2:
-                    print('GEARS may be trapped')
+    def target_failure(self):
+        self.target_fails += 1
 
-                # Do nothing
-                return
-
+        # if this is the first failure
+        if self.target_fails == 1:
             # Expand the map in all directions, marking each new tile as unknown
             self.map = np.pad(self.map, [(1, 1), (1, 1)], mode='constant', constant_values=UNKNOWN)
 
@@ -425,17 +494,32 @@ class VirtualGears:
             self.origin_row += 1
             self.origin_col += 1
 
-            # The target has not changed, so this method should be called again automatically
-            # GEARS should be able to reach one of the unknown tiles on the expanded map
-            return
+            # try again on the next cycle
 
-        self.path_fails = 0
-        # convert target node to coordinates
-        target_row, target_col = node_to_indices(target_node[0], target_node[1], num_rows)
-        self.target_x, self.target_y = self.indices_to_coordinates(target_row, target_col)
+        # if unable to find a new target after expanding the map
+        if self.target_fails == 2:
+            print('GEARS may be trapped')
+
+    # Get a new path from GEARS to the nearest unknown point
+    def get_path(self, target_x, target_y):
+
+        # update target
+        self.target_x = target_x
+        self.target_y = target_y
 
         # mark target on the map
-        self.update_map(self.target_x, self.target_y, TARGET)
+        self.update_map(target_x, target_y, TARGET)
+
+        # construct the graph
+        graph = self.construct_graph()
+        num_rows, num_cols = self.map.shape
+
+        # convert gears indices to node
+        source_node = indices_to_node(self.row, self.col, num_rows)
+
+        # Convert target coordinates to node
+        row, col = self.coordinates_to_indices(target_x, target_y)
+        target_node = indices_to_node(row, col, num_rows)
 
         # find a path from GEARS to the target
         node_path = find_path(graph, source_node, target_node, num_cols)
@@ -444,28 +528,27 @@ class VirtualGears:
         indices_path = [node_to_indices(x, y, num_rows) for x, y in node_path]
 
         # convert indices to coordinates
-        self.path = [self.indices_to_coordinates(row, col) for row, col in indices_path]
+        path = [self.indices_to_coordinates(row, col) for row, col in indices_path]
 
-        # If the path contains more than the current node
-        if len(self.path) >= 2:
-
-            # Set the lead to the next node on the path
-            self.lead_x, self.lead_y = self.path[1]
+        # reset path index
         self.path_index = 1
+
+        return path
 
     # Set lead to the correct point on the path
     def update_lead(self):
 
-        # if gears has reached the lead
-        if self.near(self.lead_x, self.lead_y, 0.1):
-            # move the lead to the next point on the path
-            self.path_index += 1
-
         # if GEARS has not reached the end of the path
         if self.path_index < len(self.path):
 
-            # set the lead to a point on the path
+            # set the lead to the current point on the path
             self.lead_x, self.lead_y = self.path[self.path_index]
+
+        # if gears has reached the lead
+        if self.near(self.lead_x, self.lead_y, 0.1):
+
+            # move the lead to the next point on the path
+            self.path_index += 1
 
     # Move to the lead (no diagonals)
     def follow_lead(self):
@@ -570,8 +653,28 @@ class VirtualGears:
                 # If at the target
                 if self.near(self.target_x, self.target_y, 0.1):
 
-                    # Get a new path
-                    self.get_new_path()
+                    # Get a new target
+                    target = self.get_nearest_unknown()
+
+                    # if unable to find a new target
+                    if target is None:
+
+                        # handle the failure
+                        self.target_failure()
+
+                        # try again
+                        return
+
+                    # reset number of target fails
+                    self.target_fails = 0
+
+                    self.target_x, self.target_y = target
+
+                    # Get a path to the new target
+                    self.path = self.get_path(self.target_x, self.target_y)
+
+                    # reset the path index
+                    self.path_index = 1
 
                 self.update_lead()  # move the lead to the next coordinate on the path
                 self.follow_lead()  # move GEARS to the lead
@@ -605,21 +708,19 @@ class VirtualGears:
             # 11. Get the target from the user
 
             # PoC Task 4
-            # TODO: Integrate with path finding system
             # Should be able to get target from user and navigate to that target intelligently
             # Differs from main demo because target may be well beyond the explored area of map
             # Will have to update path while exploring to navigate around walls as they are discovered
-            elif self.mode == 'waypoint':
+            # Call method "set_target" to tell GEARS where to go
+            elif self.mode == 'target':
 
-                # get an x, y coordinate pair from the user
-                # self.lead_x = float(input('Enter the x-coordinate: '))
-                # self.lead_y = float(input('Enter the y-coordinate: '))
+                self.detect_walls()  # Detect walls with the ultrasonic sensor and mark them on the map
 
-                # mark the coordinate on the map
-                self.update_map(self.lead_x, self.lead_y, LEAD)
+                # get a path to the target
+                self.path = self.get_path(self.target_x, self.target_y)
 
-                # go to the coordinate
-                self.follow_lead()
+                self.update_lead()  # move the lead to the next coordinate on the path
+                self.follow_lead()  # move GEARS to the lead
 
             # for testing
             elif self.mode == 'manual':
@@ -632,4 +733,4 @@ class VirtualGears:
             self.stop()
 
         self.update_motors()  # Update dps values for the motors (Directly interfaces with motors)
-        sleep(self.buffer_time)  # Wait several milliseconds before repeating
+        #sleep(self.buffer_time)  # Wait several milliseconds before repeating
