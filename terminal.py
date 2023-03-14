@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from threading import Thread
+from threading import Thread, get_ident
 from virtual_gears import VirtualGears
 import os
 
@@ -110,6 +110,8 @@ class Terminal:
 
     # Turn on the object
     def on_cmd(self, *args):
+        if len(args) > 0:
+            print('Warning: on command requires no additional arguments')
 
         # If the object is off
         if not self.obj.on:
@@ -122,6 +124,8 @@ class Terminal:
 
     # Turn off the object
     def off_cmd(self, *args):
+        if len(args) > 0:
+            print('Warning: off command requires no additional arguments')
 
         # If GEARS is on
         if self.obj.on:
@@ -134,6 +138,7 @@ class Terminal:
 
     # Get the value of an instance variable
     def get_cmd(self, *args):
+
         try:
             name = args[0]  # Get the instance variable name
         except IndexError:  # If the user did not provide an instance variable
@@ -224,24 +229,41 @@ class Terminal:
             print(f"unknown argument '{info}'")
 
     def log_cmd(self, *args):
+        if len(args) > 0:
+            print('Warning: log command requires no additional arguments')
+
         print(self.log)
 
     # Reset the object
-    def reset_cmd(self):
+    def reset_cmd(self, *args):
+        if len(args) > 0:
+            print('Warning: reset command requires no additional arguments')
+
         self.obj.__init__()
 
-    def clear_cmd(self):
+    def clear_cmd(self, *args):
+        if len(args) > 0:
+            print('Warning: clear command requires no additional arguments')
+
         os.system("cls")
         self.print_commands()
 
     # Exit the terminal
     def exit(self, *args):
+        if len(args) > 0:
+            print('Warning: exit command requires no additional arguments')
 
+        self.active = False  # Disable user input
+
+        # If exit was not called by typing "exit" in the terminal
+        if get_ident() != self.input_thread.ident:
+
+            # prompt the user to press enter so that the input thread can finish executing
+            print('\nPress Enter to continue...', end='')
+            self.input_thread.join()  # Wait for the user to press enter
         # Call the objects exit methods
         for method in self.on_exit:
             method()
-
-        self.active = False  # Deactivate terminal
 
 
 if __name__ == '__main__':

@@ -1,5 +1,4 @@
 from brickpi3 import BrickPi3
-import numpy as np
 from time import sleep
 import pandas as pd
 from helpers import get_dps
@@ -97,6 +96,7 @@ class Gears(BrickPi3):
         self.target_fails = 0
         self.hazards = pd.DataFrame(columns=['type', 'parameter', 'value', 'x', 'y'])
         self.map_number = 0
+        self.notes = ''
 
         # ADDITIONAL ATTRIBUTES
         self.on = False  # Is GEARS on?
@@ -415,6 +415,9 @@ class Gears(BrickPi3):
         row_indices, col_indices = np.where(output_map != 0)
         output_map = output_map[min(row_indices):max(row_indices) + 1, min(col_indices):max(col_indices) + 1]
 
+        self.get_map_number()
+        self.get_notes()
+
         with open("output.txt", "w") as f:
             f.write("Team: 04\n")
             f.write(f"Map: {self.map_number}\n")
@@ -428,6 +431,7 @@ class Gears(BrickPi3):
             x = col
             y = num_rows - row - 1
             f.write(f"Origin: ({x}, {y})\n")
+            f.write(f'Notes: {self.notes}\n')
 
             for row in range(num_rows):
                 for col in range(num_cols):
@@ -435,6 +439,12 @@ class Gears(BrickPi3):
                     if col < num_cols - 1:
                         f.write(",")
                 f.write("\n")
+
+    def get_map_number(self):
+        self.map_number = int(input('Map number: '))
+
+    def get_notes(self):
+        self.notes = str(input('Notes: '))
 
     # Set the heading and turn to face it
     def set_heading(self, degrees, turn=False):
@@ -466,7 +476,6 @@ class Gears(BrickPi3):
         self.target_x = float(input('Enter the x-coordinate: '))
         self.target_y = float(input('Enter the y-coordinate: '))
         self.update_map(self.target_x, self.target_y, TARGET)
-
 
     def get_nearest_unknown(self):
 

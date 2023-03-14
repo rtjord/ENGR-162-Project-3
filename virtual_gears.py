@@ -1,5 +1,3 @@
-from time import sleep
-import numpy as np
 import pandas as pd
 from helpers import get_dps
 from path_finding import *
@@ -95,6 +93,7 @@ class VirtualGears:
         self.target_fails = 0
         self.hazards = pd.DataFrame(columns=['type', 'parameter', 'value', 'x', 'y'])
         self.map_number = 0
+        self.notes = ''
 
         # ADDITIONAL ATTRIBUTES
         self.on = False  # Is GEARS on?
@@ -399,6 +398,9 @@ class VirtualGears:
         row_indices, col_indices = np.where(output_map != 0)
         output_map = output_map[min(row_indices):max(row_indices) + 1, min(col_indices):max(col_indices) + 1]
 
+        self.get_map_number()
+        self.get_notes()
+
         with open("output.txt", "w") as f:
             f.write("Team: 04\n")
             f.write(f"Map: {self.map_number}\n")
@@ -412,9 +414,7 @@ class VirtualGears:
             x = col
             y = num_rows - row - 1
             f.write(f"Origin: ({x}, {y})\n")
-
-            notes = self.get_notes()
-            f.write(notes + '\n')
+            f.write(f'Notes: {self.notes}\n')
 
             for row in range(num_rows):
                 for col in range(num_cols):
@@ -423,9 +423,11 @@ class VirtualGears:
                         f.write(",")
                 f.write("\n")
 
+    def get_map_number(self):
+        self.map_number = int(input('Map number: '))
+
     def get_notes(self):
-        notes = str(input('Notes: '))
-        return notes
+        self.notes = str(input('Notes: '))
 
     # Set the heading and turn to face it
     def set_heading(self, degrees, turn=False):
