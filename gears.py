@@ -4,42 +4,12 @@ import pandas as pd
 from helpers import get_dps
 from path_finding import *
 from hardware import read_ultrasonic
-
-
-# ORIGIN = 3
-# PATH = 1
-# GEARS = 2
-# LEAD = 4
-# TARGET = 6
-# WALL = -1
-# CLEAR = 5
-# UNKNOWN = 0
-
-ORIGIN = 'O'
-PATH = 'X'
-GEARS = 'G'
-LEAD = 'L'
-TARGET = 'T'
-WALL = '!'
-CLEAR = ' '
-UNKNOWN = 'U'
-HEAT = 'H'
-MAGNET = 'M'
-
-FRONT = 0
-LEFT = 90
-BACK = 180
-RIGHT = 270
-
-RESET = '\033[0m'
-GREEN = '\033[32m'
-RED = '\033[31m'
-BLUE = '\033[34m'
-CYAN = '\033[36m'
+from constants import *
+import os
 
 
 class Gears(BrickPi3):
-    def __init__(self, mode='auto', max_speed=15, wheel_radius=3, buffer_time=0.01):
+    def __init__(self, mode='auto', max_speed=15, wheel_radius=3, buffer_time=0.01, visualizer=False):
 
         # Initialize parent class
         BrickPi3.__init__(self)
@@ -94,9 +64,14 @@ class Gears(BrickPi3):
         self.lead_y = self.y_coordinate
         self.path_index = 1
         self.target_fails = 0
-        self.hazards = pd.DataFrame(columns=['type', 'parameter', 'value', 'x', 'y'])
+        self.hazards = pd.DataFrame(columns=['Resource Type',
+                                             'Parameter of Interest',
+                                             'Parameter',
+                                             'Resource X Coordinate',
+                                             'Resource Y Coordinate'])
         self.map_number = 0
         self.notes = ''
+        self.visualizer = visualizer
 
         # ADDITIONAL ATTRIBUTES
         self.on = False  # Is GEARS on?
@@ -396,6 +371,8 @@ class Gears(BrickPi3):
                     color = GREEN
                 elif char == WALL:
                     color = RED
+                elif char == TARGET:
+                    color = PURPLE
                 else:
                     color = ''
 
@@ -417,11 +394,12 @@ class Gears(BrickPi3):
 
         self.get_map_number()
         self.get_notes()
+        output_file = f"maps/outputs/map{self.map_number}.txt"
 
-        with open("output.txt", "w") as f:
+        with open(output_file, "w") as f:
             f.write("Team: 04\n")
             f.write(f"Map: {self.map_number}\n")
-            f.write(f"Unit length: {self.tile_width}\n")
+            f.write(f"Unit Length: {self.tile_width}\n")
             f.write("Unit: cm\n")
 
             num_rows, num_cols = output_map.shape
@@ -445,6 +423,24 @@ class Gears(BrickPi3):
 
     def get_notes(self):
         self.notes = str(input('Notes: '))
+
+    def write_hazards(self):
+        print('Writing hazards to file')
+        self.get_map_number()
+        self.get_notes()
+
+        filename = 'maps/outputs/team04_hazards.csv'
+
+        hazards = self.hazards.to_csv()
+        hazards = hazards[1:]
+        hazards = hazards.replace(',', ', ')
+        hazards = hazards.replace('\r', '')
+
+        with open(filename, 'w') as f:
+            f.write('Team: 04\n')
+            f.write(f'Map: {self.map_number}\n')
+            f.write(f'Notes: {self.notes}\n\n')
+            f.write(hazards)
 
     # Set the heading and turn to face it
     def set_heading(self, degrees, turn=False):
@@ -564,6 +560,11 @@ class Gears(BrickPi3):
 
         # if gears has reached the lead
         if self.near(self.lead_x, self.lead_y, 0.1):
+
+            # if visualizer is True
+            if self.visualizer:
+                os.system("cls")  # clear the terminal
+                self.display_map()  # display the updated map
 
             # move the lead to the next point on the path
             self.path_index += 1

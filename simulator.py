@@ -1,8 +1,8 @@
+#!/usr/bin/env python3
+
 from virtual_gears import VirtualGears
 from terminal import Terminal
 import numpy as np
-
-WALL = '!'
 
 
 def load_map(filename):
@@ -28,25 +28,28 @@ def setup_map(sim_map, gears):
 
 
 def main():
-    gears = VirtualGears()  # Create a VirtualGears object
-    sim_map = load_map('maps/map1.txt')
-    gears = setup_map(sim_map, gears)
+    gears = VirtualGears(max_speed=5, buffer_time=0.01, visualizer=True)  # create a VirtualGears object
+    sim_map = load_map('maps/inputs/map1.csv')  # load map
+    gears = setup_map(sim_map, gears)  # give map to GEARS
 
-    # Create a Terminal object
-    terminal = Terminal(gears, on_startup=[], on_exit=[gears.display_map, gears.write_map, gears.exit])
-    terminal.start()  # Start the terminal
+    # create a Terminal object
+    terminal = Terminal(gears, on_startup=[], on_exit=[gears.display_map,
+                                                       gears.write_map,
+                                                       gears.write_hazards,
+                                                       gears.exit])
+    terminal.start()  # start the terminal
 
     try:
-        while terminal.active:  # While the terminal is active
-            gears.run()  # Run main logic for rover
+        while terminal.active:  # while the terminal is active
+            gears.run()  # run main logic for rover
 
             # the map has expanded but not because of path finding failure
             if gears.map.size != sim_map.size and gears.target_fails == 0:
-                print(f'\n Gears successfully exited the maze')
-                terminal.exit()
+                print(f'\nGears successfully exited the maze')  # alert the user
+                terminal.exit()  # exit the terminal
 
-    except KeyboardInterrupt:  # If the user presses Ctrl+C
-        terminal.exit()  # Exit the terminal
+    except KeyboardInterrupt:  # if the user presses Ctrl+C
+        terminal.exit()  # exit the terminal
 
 
 if __name__ == '__main__':

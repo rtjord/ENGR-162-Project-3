@@ -1,46 +1,16 @@
 import pandas as pd
 from helpers import get_dps
 from path_finding import *
+from constants import *
+import os
 
 
-# ORIGIN = 3
-# PATH = 1
-# GEARS = 2
-# LEAD = 4
-# TARGET = 6
-# WALL = -1
-# CLEAR = 5
-# UNKNOWN = 0
-
-ORIGIN = 'O'
-PATH = 'X'
-GEARS = 'G'
-LEAD = 'L'
-TARGET = 'T'
-WALL = '!'
-CLEAR = ' '
-UNKNOWN = 'U'
-HEAT = 'H'
-MAGNET = 'M'
-
-FRONT = 0
-LEFT = 90
-BACK = 180
-RIGHT = 270
-
-RESET = '\033[0m'
-GREEN = '\033[32m'
-RED = '\033[31m'
-BLUE = '\033[34m'
-CYAN = '\033[36m'
-
-
-def read_ultrasonic(direction):
+def read_ultrasonic():
     return np.inf
 
 
 class VirtualGears:
-    def __init__(self, mode='auto', max_speed=500, wheel_radius=3, buffer_time=0.01):
+    def __init__(self, mode='auto', max_speed=500, wheel_radius=3, buffer_time=0.01, visualizer=False):
 
         # MOTORS AND WHEELS
         # Assign wheels to BrickPi ports
@@ -91,9 +61,14 @@ class VirtualGears:
         self.lead_y = self.y_coordinate
         self.path_index = 1
         self.target_fails = 0
-        self.hazards = pd.DataFrame(columns=['type', 'parameter', 'value', 'x', 'y'])
+        self.hazards = pd.DataFrame(columns=['Resource Type',
+                                             'Parameter of Interest',
+                                             'Parameter',
+                                             'Resource X Coordinate',
+                                             'Resource Y Coordinate'])
         self.map_number = 0
         self.notes = ''
+        self.visualizer = visualizer
 
         # ADDITIONAL ATTRIBUTES
         self.on = False  # Is GEARS on?
@@ -181,9 +156,9 @@ class VirtualGears:
     def detect_walls(self):
 
         # Get wall distance
-        front_distance = read_ultrasonic(FRONT)
-        left_distance = read_ultrasonic(LEFT)
-        right_distance = read_ultrasonic(RIGHT)
+        front_distance = read_ultrasonic()
+        left_distance = read_ultrasonic()
+        right_distance = read_ultrasonic()
 
         # Get the coordinates of the tiles that sensors are pointing at
         front_x, front_y = self.get_neighbor_coordinates(FRONT)
@@ -368,6 +343,7 @@ class VirtualGears:
     def display_map(self):
         map_copy = self.map.copy()
         print('---' * map_copy.shape[1])
+
         for row in map_copy:
             print('|', end='')
             for char in row:
@@ -379,6 +355,8 @@ class VirtualGears:
                     color = GREEN
                 elif char == WALL:
                     color = RED
+                elif char == TARGET:
+                    color = PURPLE
                 else:
                     color = ''
 
@@ -387,6 +365,7 @@ class VirtualGears:
         print('---' * map_copy.shape[1])
 
     def write_map(self):
+        print('Writing map to file')
         output_map = np.zeros(self.map.shape, dtype='int32')
         output_map[self.map == PATH] = 1
         output_map[self.map == ORIGIN] = 5
@@ -400,11 +379,12 @@ class VirtualGears:
 
         self.get_map_number()
         self.get_notes()
+        output_file = f"maps/outputs/map{self.map_number}.csv"
 
-        with open("output.txt", "w") as f:
+        with open(output_file, "w") as f:
             f.write("Team: 04\n")
             f.write(f"Map: {self.map_number}\n")
-            f.write(f"Unit length: {self.tile_width}\n")
+            f.write(f"Unit Length: {self.tile_width}\n")
             f.write("Unit: cm\n")
 
             num_rows, num_cols = output_map.shape
@@ -424,10 +404,28 @@ class VirtualGears:
                 f.write("\n")
 
     def get_map_number(self):
-        self.map_number = int(input('Map number: '))
+        self.map_number = input('Map number: ')
 
     def get_notes(self):
         self.notes = str(input('Notes: '))
+
+    def write_hazards(self):
+        print('Writing hazards to file')
+        self.get_map_number()
+        self.get_notes()
+
+        filename = 'maps/outputs/team04_hazards.csv'
+
+        hazards = self.hazards.to_csv()
+        hazards = hazards[1:]
+        hazards = hazards.replace(',', ', ')
+        hazards = hazards.replace('\r', '')
+
+        with open(filename, 'w') as f:
+            f.write('Team: 04\n')
+            f.write(f'Map: {self.map_number}\n')
+            f.write(f'Notes: {self.notes}\n\n')
+            f.write(hazards)
 
     # Set the heading and turn to face it
     def set_heading(self, degrees, turn=False):
@@ -548,7 +546,9 @@ class VirtualGears:
 
         # if gears has reached the lead
         if self.near(self.lead_x, self.lead_y, 0.1):
-
+            if self.visualizer:
+                os.system("cls")
+                self.display_map()
             # move the lead to the next point on the path
             self.path_index += 1
 
@@ -735,4 +735,3 @@ class VirtualGears:
             self.stop()
 
         self.update_motors()  # Update dps values for the motors (Directly interfaces with motors)
-        #sleep(self.buffer_time)  # Wait several milliseconds before repeating

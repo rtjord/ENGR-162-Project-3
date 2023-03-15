@@ -1,0 +1,22 @@
+ORIGIN = 'O'
+PATH = 'X'
+GEARS = 'G'
+LEAD = 'L'
+TARGET = 'T'
+WALL = '!'
+CLEAR = ' '
+UNKNOWN = 'U'
+HEAT = 'H'
+MAGNET = 'M'
+
+FRONT = 0
+LEFT = 90
+BACK = 180
+RIGHT = 270
+
+RESET = '\033[0m'
+GREEN = '\033[32m'
+RED = '\033[31m'
+BLUE = '\033[34m'
+CYAN = '\033[36m'
+PURPLE = '\033[35m'

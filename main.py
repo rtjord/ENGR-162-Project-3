@@ -5,10 +5,13 @@ from terminal import Terminal
 
 
 def main():
-    gears = Gears()  # Create a Gears object
+    gears = Gears(max_speed=15, visualizer=True)  # Create a Gears object
 
     # Create a Terminal object
-    terminal = Terminal(gears, on_startup=[], on_exit=[gears.exit])
+    terminal = Terminal(gears, on_startup=[], on_exit=[gears.display_map,
+                                                       gears.write_map,
+                                                       gears.write_hazards,
+                                                       gears.exit])
     terminal.start()  # Start the terminal
 
     try:
