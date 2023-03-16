@@ -8,10 +8,10 @@ import random
 
 def read_ultrasonic():
 
-    rand = random.randint(0, 1000)
-
-    if rand == 0:
-        return 10
+    # rand = random.randint(0, 1000)
+    #
+    # if rand == 0:
+    #     return 10
 
     return np.inf
 
@@ -395,9 +395,9 @@ class VirtualGears:
         map_copy = self.map.copy()
         print('---' * map_copy.shape[1])
 
-        for row in map_copy:
-            print('|', end='')
-            for char in row:
+        for i, row in enumerate(map_copy):
+            for j, char in enumerate(row):
+                coordinates = self.indices_to_coordinates(i, j)
                 if char == ORIGIN:
                     color = CYAN
                 elif char == GEARS:
@@ -408,6 +408,8 @@ class VirtualGears:
                     color = RED
                 elif char == TARGET:
                     color = PURPLE
+                elif coordinates in self.path:
+                    color = LIGHT_GREY
                 else:
                     color = ''
 
@@ -714,7 +716,8 @@ class VirtualGears:
                 at_target = self.near(self.target_x, self.target_y, 0.1)
                 path_blocked = self.check_path_blocked()
 
-                if at_target or path_blocked or self.path == []:
+                # if at the end of the path or the path is blocked
+                if self.path_index >= len(self.path) or path_blocked:
 
                     # Get a new target
                     target = self.get_nearest_unknown()
@@ -804,8 +807,11 @@ class VirtualGears:
                 # new_wall is True if a new wall was detected
                 new_wall = self.detect_walls()
 
-                # if a new wall is detected or there is no path
-                if new_wall or self.path == []:
+                path_blocked = self.check_path_blocked()
+                end_of_path = self.path_index >= len(self.path)
+                target_changed = len(self.path) > 0 and self.path[-1] != (self.target_x, self.target_y)
+
+                if path_blocked or end_of_path or target_changed:
 
                     # get a new path to the target
                     self.get_path(self.target_x, self.target_y)

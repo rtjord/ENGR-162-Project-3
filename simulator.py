@@ -31,7 +31,7 @@ def setup_map(sim_map, gears):
 
 def main():
     gears = VirtualGears(max_speed=500, buffer_time=0.01, visualizer=True)  # create a VirtualGears object
-    sim_map = load_map('maps/inputs/empty.csv')  # load map
+    sim_map = load_map('maps/inputs/map1.csv')  # load map
 
     gears = setup_map(sim_map, gears)  # give map to GEARS
 
