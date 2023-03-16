@@ -8,6 +8,7 @@ CLEAR = ' '
 UNKNOWN = 'U'
 HEAT = 'H'
 MAGNET = 'M'
+EXIT = 'E'
 
 FRONT = 0
 LEFT = 90

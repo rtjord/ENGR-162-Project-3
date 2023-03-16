@@ -25,31 +25,44 @@ def setup_map(sim_map, gears):
     gears.origin_col = start[1][0]
     gears.row = gears.origin_row
     gears.col = gears.origin_col
-    x, y = gears.get_neighbor_coordinates(BACK)
-    gears.update_map(x, y, WALL)
 
     return gears
 
 
 def main():
     gears = VirtualGears(max_speed=500, buffer_time=0.01, visualizer=True)  # create a VirtualGears object
-    sim_map = load_map('maps/inputs/map5.csv')  # load map
+    sim_map = load_map('maps/inputs/empty.csv')  # load map
+
     gears = setup_map(sim_map, gears)  # give map to GEARS
 
-    sim_map = gears.map
+    # locate the exit
+    exit_row, exit_col = np.where(sim_map == EXIT)
+    try:
+        exit_row = exit_row[0]
+        exit_col = exit_col[0]
+        exit_x, exit_y = gears.indices_to_coordinates(exit_row, exit_col)
+    except IndexError:
+        print('Exit not marked')
+        exit_x = np.inf
+        exit_y = np.inf
+
+    gears.display_map()
+
     # create a Terminal object
-    terminal = Terminal(gears, on_startup=[], on_exit=[gears.display_map,
-                                                       gears.exit])
+    terminal = Terminal(gears, on_startup=[gears.setup], on_exit=[gears.display_map,
+                                                                  gears.write_map,
+                                                                  gears.write_hazards,
+                                                                  gears.exit])
     terminal.start()  # start the terminal
 
     try:
         while terminal.active:  # while the terminal is active
             gears.run()  # run main logic for rover
 
-            # the map has expanded but not because of path finding failure
-            if gears.map.size > sim_map.size and gears.target_fails == 0:
-                print(f'\nGears successfully exited the maze')  # alert the user
-                terminal.exit()  # exit the terminal
+            # if GEARS found the exit
+            if gears.near(exit_x, exit_y, 0.1):
+                print(f'\nGears successfully exited the maze')
+                terminal.exit()
 
     except KeyboardInterrupt:  # if the user presses Ctrl+C
         terminal.exit()  # exit the terminal

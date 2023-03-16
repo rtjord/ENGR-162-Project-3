@@ -3,9 +3,16 @@ from helpers import get_dps
 from path_finding import *
 from constants import *
 import os
+import random
 
 
 def read_ultrasonic():
+
+    rand = random.randint(0, 1000)
+
+    if rand == 0:
+        return 10
+
     return np.inf
 
 
@@ -66,8 +73,6 @@ class VirtualGears:
                                              'Parameter',
                                              'Resource X Coordinate',
                                              'Resource Y Coordinate'])
-        self.map_number = 0
-        self.notes = ''
         self.visualizer = visualizer
 
         # ADDITIONAL ATTRIBUTES
@@ -76,9 +81,9 @@ class VirtualGears:
         self.mode = mode  # current mode
         self.mode_list = ['auto', 'walls', 'point_turn', 'target', 'manual']  # list of known modes
 
-        # Place a phantom wall behind GEARS to prevent it from exiting through the entrance
-        x, y = self.get_neighbor_coordinates(BACK)
-        self.update_map(x, y, WALL)
+        # # Place a phantom wall behind GEARS to prevent it from exiting through the entrance
+        # x, y = self.get_neighbor_coordinates(BACK)
+        # self.update_map(x, y, WALL)
 
     # Reset all motor encoders to 0
     def reset_motor_encoders(self):
@@ -139,6 +144,16 @@ class VirtualGears:
     def wait_for_turn(self):
         while self.turning:
             self.correct_orientation()
+
+    # Keep GEARS from exiting through the entrance
+    def setup(self):
+
+        # Place a phantom wall at the entrance to keep GEARS from exiting through the entrance.
+        # This solution is more flexible than simply marking the origin with a wall because it
+        # allows GEARS to return to the origin.
+        direction = float(input('What is the direction of the entrance relative to the origin? (degrees): '))
+        x, y = self.get_neighbor_coordinates(direction)
+        self.update_map(x, y, WALL)
 
     # record hazard in a dataframe
     def record_hazard(self, hazard_type, parameter, value, x, y):
@@ -401,7 +416,7 @@ class VirtualGears:
         print('---' * map_copy.shape[1])
 
     def write_map(self):
-        print('Writing map to file')
+        print('\nWriting map to file')
         output_map = np.zeros(self.map.shape, dtype='int32')
         output_map[self.map == PATH] = 1
         output_map[self.map == ORIGIN] = 5
@@ -413,24 +428,24 @@ class VirtualGears:
         row_indices, col_indices = np.where(output_map != 0)
         output_map = output_map[min(row_indices):max(row_indices) + 1, min(col_indices):max(col_indices) + 1]
 
-        self.get_map_number()
-        self.get_notes()
-        output_file = f"maps/outputs/map{self.map_number}.csv"
+        map_number = str(input('Map number: '))
+        output_file = f"maps/outputs/map{map_number}.csv"
+        notes = str(input('Notes: '))
+
+        num_rows, num_cols = output_map.shape
+        rows, cols = np.where(output_map == 5)
+        row = rows[0]
+        col = cols[0]
+        x = col
+        y = num_rows - row - 1
 
         with open(output_file, "w") as f:
             f.write("Team: 04\n")
-            f.write(f"Map: {self.map_number}\n")
+            f.write(f"Map: {map_number}\n")
             f.write(f"Unit Length: {self.tile_width}\n")
             f.write("Unit: cm\n")
-
-            num_rows, num_cols = output_map.shape
-            rows, cols = np.where(output_map == 5)
-            row = rows[0]
-            col = cols[0]
-            x = col
-            y = num_rows - row - 1
             f.write(f"Origin: ({x}, {y})\n")
-            f.write(f'Notes: {self.notes}\n')
+            f.write(f'Notes: {notes}\n')
 
             for row in range(num_rows):
                 for col in range(num_cols):
@@ -439,18 +454,12 @@ class VirtualGears:
                         f.write(",")
                 f.write("\n")
 
-    def get_map_number(self):
-        self.map_number = input('Map number: ')
-
-    def get_notes(self):
-        self.notes = str(input('Notes: '))
-
     def write_hazards(self):
-        print('Writing hazards to file')
-        self.get_map_number()
-        self.get_notes()
+        print('\nWriting hazards to file')
 
         filename = 'maps/outputs/team04_hazards.csv'
+        map_number = str(input('Map number: '))
+        notes = str(input('Notes: '))
 
         hazards = self.hazards.to_csv()
         hazards = hazards[1:]
@@ -459,8 +468,8 @@ class VirtualGears:
 
         with open(filename, 'w') as f:
             f.write('Team: 04\n')
-            f.write(f'Map: {self.map_number}\n')
-            f.write(f'Notes: {self.notes}\n\n')
+            f.write(f'Map: {map_number}\n')
+            f.write(f'Notes: {notes}\n\n')
             f.write(hazards)
 
     # Set the heading and turn to face it
@@ -705,7 +714,7 @@ class VirtualGears:
                 at_target = self.near(self.target_x, self.target_y, 0.1)
                 path_blocked = self.check_path_blocked()
 
-                if at_target or path_blocked:
+                if at_target or path_blocked or self.path == []:
 
                     # Get a new target
                     target = self.get_nearest_unknown()

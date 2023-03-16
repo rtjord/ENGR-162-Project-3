@@ -79,10 +79,6 @@ class Gears(BrickPi3):
         self.mode = mode  # current mode
         self.mode_list = ['auto', 'walls', 'point_turn', 'target', 'manual']  # list of known modes
 
-        # Place a phantom wall behind GEARS to prevent it from exiting through the entrance
-        x, y = self.get_neighbor_coordinates(BACK)
-        self.update_map(x, y, WALL)
-
     # Reset a single motor encoder to 0
     def reset_encoder(self, port):
         self.offset_motor_encoder(port, self.get_motor_encoder(port))
@@ -613,16 +609,16 @@ class Gears(BrickPi3):
         x_position, y_position = self.coordinates_to_position(self.lead_x, self.lead_y)
 
         # if GEARS is more than 1 cm away from the lead in the x direction
-        if not np.isclose(self.x_position, x_position, 0, 1):
+        if not np.isclose(self.x_position, x_position, 1):
             delta_x = x_position - self.x_position
             delta_y = 0
 
         # if GEARS is more than 1 cm away from the lead in the y direction
-        elif not np.isclose(self.y_position, y_position, 0, 1):
+        elif not np.isclose(self.y_position, y_position, 0, 0.1):
             delta_x = 0
             delta_y = y_position - self.y_position
 
-        # if GEARS is within 1 cm of the lead in both directions, do nothing
+        # if GEARS is within 0.1 tile widths of the lead in both directions, do nothing
         else:
             self.stop()
             return
