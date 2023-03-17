@@ -5,7 +5,7 @@ from constants import *
 
 
 class VirtualGears:
-    def __init__(self, ultrasonic, mode='auto', max_speed=500, wheel_radius=3, buffer_time=0.01):
+    def __init__(self, ultrasonic, mode='auto', max_speed=500, wheel_radius=3, timestep=0.01):
         # MOTORS AND WHEELS
         # Assign wheels to BrickPi ports
         self.left_wheel = None
@@ -64,7 +64,7 @@ class VirtualGears:
 
         # ADDITIONAL ATTRIBUTES
         self.on = False  # Is GEARS on?
-        self.buffer_time = buffer_time  # time between cycles (seconds)
+        self.buffer_time = timestep  # time between cycles (seconds)
         self.mode = mode  # current mode
         self.mode_list = ['auto', 'walls', 'point_turn', 'target', 'manual']  # list of known modes
 
@@ -147,6 +147,12 @@ class VirtualGears:
         x, y = self.get_neighbor_coordinates(direction)
         self.update_map(x, y, WALL)
 
+    def get_mark(self, x_coordinate, y_coordinate):
+        row, col = self.coordinates_to_indices(x_coordinate, y_coordinate)
+        if 0 <= row < self.map.shape[0] and 0 <= col < self.map.shape[1]:
+            return self.map[row][col]
+        return UNKNOWN
+
     # record hazard in a dataframe
     def record_hazard(self, hazard_type, parameter, value, x, y):
 
@@ -217,24 +223,9 @@ class VirtualGears:
         left_x, left_y = self.get_neighbor_coordinates(LEFT)
         right_x, right_y = self.get_neighbor_coordinates(RIGHT)
 
-        front_row, front_col = self.coordinates_to_indices(front_x, front_y)
-        left_row, left_col = self.coordinates_to_indices(left_x, left_y)
-        right_row, right_col = self.coordinates_to_indices(right_x, right_y)
-
-        try:
-            front_mark = self.map[front_row][front_col]
-        except IndexError:
-            front_mark = UNKNOWN
-
-        try:
-            left_mark = self.map[left_row][left_col]
-        except IndexError:
-            left_mark = UNKNOWN
-
-        try:
-            right_mark = self.map[right_row][right_col]
-        except IndexError:
-            right_mark = UNKNOWN
+        front_mark = self.get_mark(front_x, front_y)
+        left_mark = self.get_mark(left_x, left_y)
+        right_mark = self.get_mark(right_x, right_y)
 
         if left_mark != WALL and left_mark != PATH and left_mark != ORIGIN:
             self.turn_left()
@@ -505,21 +496,39 @@ class VirtualGears:
         wall_nodes = [indices_to_node(row, col, num_rows) for row, col in walls]
 
         # remove the walls from the graph
-        for node in wall_nodes:
-            graph = remove_node(graph, node, num_cols)
+        graph = remove_nodes(graph, wall_nodes, num_cols)
 
         return graph
 
     def set_target(self):
-        if self.mode != 'target':
-            print(f'Warning: mode is not set to target')
-            decision = str(input('Proceed? (y/n): '))
-            if decision == 'n':
-                return
 
-        self.target_x = float(input('Enter the x-coordinate: '))
-        self.target_y = float(input('Enter the y-coordinate: '))
-        self.update_map(self.target_x, self.target_y, TARGET)
+        # if the mode is not set to target
+        if self.mode != 'target':
+            print(f'Warning: mode is not set to target')  # warn the user
+            decision = str(input('Proceed? (y/n): '))  # ask if they wish to proceed
+            if decision == 'n':  # if no
+                return  # stop
+
+        # get target from the user
+        target_x = float(input('Enter the x-coordinate: '))
+        target_y = float(input('Enter the y-coordinate: '))
+
+        # mark target on map
+        # if the target is a wall, the map will not change
+        # if the target is off the map, the map will expand
+        row, col = self.coordinates_to_indices(target_x, target_y)
+        self.update_map(target_x, target_y, TARGET)
+
+        # if the target is a wall
+        if self.map[row][col] == WALL:
+            print('Warning: target is a wall')  # alert the user
+            decision = input('Proceed? (y/n)')  # ask if they wish to proceed
+            if decision == 'n':  # if no
+                return  # stop
+
+        # update the target
+        self.target_x = target_x
+        self.target_y = target_y
 
     def get_nearest_unknown(self):
 
@@ -539,6 +548,7 @@ class VirtualGears:
 
         target_node = find_nearest_unknown(graph, source_node, num_cols, known_nodes)
 
+        # if an unknown point is not accessible, return None
         if target_node is None:
             return None
 
@@ -546,9 +556,12 @@ class VirtualGears:
         target_row, target_col = node_to_indices(target_node[0], target_node[1], num_rows)
         target_x, target_y = self.indices_to_coordinates(target_row, target_col)
 
+        # return the coordinates of the unknown point
         return target_x, target_y
 
     def target_failure(self):
+
+        # record the failure
         self.target_fails += 1
 
         # if this is the first failure
@@ -655,13 +668,15 @@ class VirtualGears:
         # correct direction
         self.move_forward()
 
+    #  Return True if the path runs into a wall. Else return false
     def check_path_blocked(self):
+
+        # for each coordinate pair in the path
         for x, y in self.path:
-            row, col = self.coordinates_to_indices(x, y)
-            mark = self.map[row][col]
-            if mark == WALL:
+            mark = self.get_mark(x, y)  # get the mark at that coordinate
+            if mark == WALL:  # if the mark is a wall
                 return True
-        return False
+        return False  # if none of the marks in the path are walls
 
     # Determine if GEARS is near (x_coordinate, y_coordinate) within a certain tolerance
     def near(self, x_coordinate, y_coordinate, tolerance):
@@ -671,15 +686,17 @@ class VirtualGears:
     # Determine the turning constant
     def calibrate_turns(self):
 
+        # if GEARS is not on
         if not self.on:
+
+            # warn the user
             print('Warning: GEARS is not on. Calibrating while off may cause infinite loop.')
             decision = str(input('Proceed? (y/n): '))
-            if decision == 'n':
-                return
+            if decision == 'n':  # if yes
+                return  # stop
 
         # Get the turning constant from the user
         valid_input = False
-
         while not valid_input:
             try:
                 self.turning_constant = float(input('Enter the turning constant: '))
@@ -696,6 +713,7 @@ class VirtualGears:
         self.set_heading(180, turn=True)
         self.wait_for_turn()
 
+        # Display info
         difference = self.right_encoder - self.left_encoder
         print('Encoder difference:', difference, 'degrees')
         print('Turning constant:', self.turning_constant)

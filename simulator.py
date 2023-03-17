@@ -127,13 +127,14 @@ class Simulator:
                 print(f'|{y:2.0f}')
         print('---' * map_copy.shape[1])
 
+    # main logic for the simulator
     def run(self):
 
         if self.visualizer:
             # make a copy of the map at the start of the cycle
             map_copy = self.gears.map.copy()
 
-        self.gears.run()  # run main logic for rover
+        self.gears.run()  # advance the state of GEARS by one timestep
 
         # if GEARS found the exit and is in auto mode
         if self.gears.near(self.exit_x, self.exit_y, 0.1) and self.gears.mode == 'auto':
@@ -157,9 +158,9 @@ class Simulator:
 
 
 def main():
-    filename = 'maps/inputs/map3.csv'
+    filename = 'maps/inputs/map1.csv'
     ultrasonic = VirtualUltrasonic(filename=filename, tile_width=40)
-    gears = VirtualGears(ultrasonic=ultrasonic, max_speed=500, buffer_time=0.01)  # create a VirtualGears object
+    gears = VirtualGears(ultrasonic=ultrasonic, max_speed=500, timestep=0.01)  # create a VirtualGears object
     simulator = Simulator(gears, filename, visualizer=True)  # create a simulator object
 
     # create a Terminal object

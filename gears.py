@@ -1,11 +1,10 @@
 from brickpi3 import BrickPi3
 from time import sleep
 import pandas as pd
-from helpers import get_dps, linear_regression, round_half_up
+from helpers import get_dps, round_half_up
 from path_finding import *
 from hardware import read_ultrasonic
 from constants import *
-import os
 
 
 class Gears(BrickPi3):
@@ -522,8 +521,7 @@ class Gears(BrickPi3):
         wall_nodes = [indices_to_node(row, col, num_rows) for row, col in walls]
 
         # remove the walls from the graph
-        for node in wall_nodes:
-            graph = remove_node(graph, node, num_cols)
+        graph = remove_nodes(graph, wall_nodes, num_cols)
 
         return graph
 
