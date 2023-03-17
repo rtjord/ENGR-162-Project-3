@@ -172,8 +172,10 @@ class VirtualGears:
     # detect walls with the ultrasonic sensor and record them on the map
     def detect_walls(self):
 
-        # do not detect walls while turning
-        if self.turning:
+        near_half = np.isclose(self.x_coordinate % 1, 0.5, 0, 0.01) or np.isclose(self.y_coordinate % 1, 0.5, 0, 0.01)
+
+        # do not detect walls while turning or near the halfway mark between tiles
+        if self.turning or near_half:
             return False
 
         # Get wall distance

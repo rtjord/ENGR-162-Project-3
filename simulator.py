@@ -34,8 +34,17 @@ class VirtualUltrasonic:
         row = round(row - np.sin(np.radians(direction)))
         col = round(col + np.cos(np.radians(direction)))
 
+        in_bounds = 0 <= row < self.sim_map.shape[0] and 0 <= col < self.sim_map.shape[1]
+        if not in_bounds:
+
+            # GEARS is requesting information beyond the sim map
+            return np.inf  # no obstacle detected
+
         mark = self.sim_map[row][col]
+
         if mark == WALL:
+            # if np.isclose(direction, 270, 0, 0.1):
+            #     print(f'Detecting wall at row: {row}, col: {col} from x: {x_coordinate}, y: {y_coordinate}')
             return self.tile_width / 4
         return np.inf
 
@@ -57,7 +66,7 @@ class Simulator:
         self.finished = False
         self.sim_map = load_map(filename)
         self.setup_map()
-        print(self.sim_map)
+        self.display_map()
 
     # Convert indices to coordinates (tile widths)
     def indices_to_coordinates(self, row, col):
@@ -79,6 +88,46 @@ class Simulator:
             print('Exit not marked')
             self.exit_x = np.inf
             self.exit_y = np.inf
+
+    # Display a polished map output
+    def display_map(self, show_coordinates=False):
+        map_copy = self.sim_map.copy()
+
+        if show_coordinates:
+            for col in range(map_copy.shape[1]):
+                x, y = self.indices_to_coordinates(0, col)
+                print(f'{x:3.0f}', end='')
+            print()
+
+        print('---' * map_copy.shape[1])
+
+        for i, row in enumerate(map_copy):
+            print('|', end='')
+            for j, char in enumerate(row):
+                coordinates = self.indices_to_coordinates(i, j)
+                if char == ORIGIN:
+                    color = CYAN
+                elif char == GEARS:
+                    color = BLUE
+                elif char == PATH:
+                    color = GREEN
+                elif char == WALL:
+                    color = RED
+                elif char == TARGET:
+                    color = PURPLE
+                elif coordinates in self.gears.path:
+                    color = LIGHT_GREY
+                else:
+                    color = ''
+
+                print(color + char + RESET + ', ', end='')
+
+            if not show_coordinates:
+                print(f'|')
+            if show_coordinates:
+                x, y = self.indices_to_coordinates(i, 0)
+                print(f'|{y:2.0f}')
+        print('---' * map_copy.shape[1])
 
     def run(self):
 
@@ -110,7 +159,7 @@ class Simulator:
 
 
 def main():
-    filename = 'maps/inputs/map1.csv'
+    filename = 'maps/inputs/map2.csv'
     ultrasonic = VirtualUltrasonic(filename=filename, tile_width=40)
     gears = VirtualGears(ultrasonic=ultrasonic, max_speed=500, buffer_time=0.01)  # create a VirtualGears object
     simulator = Simulator(gears, filename, visualizer=True)  # create a simulator object
