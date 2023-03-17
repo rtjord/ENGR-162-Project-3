@@ -146,6 +146,7 @@ class Gears(BrickPi3):
         # Place a phantom wall at the entrance to keep GEARS from exiting through the entrance.
         # This solution is more flexible than simply marking the origin with a wall because it
         # allows GEARS to return to the origin.
+        self.display_map()
         direction = float(input('What is the direction of the entrance relative to the origin? (degrees): '))
         x, y = self.get_neighbor_coordinates(direction)
         self.update_map(x, y, WALL)

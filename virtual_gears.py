@@ -153,6 +153,7 @@ class VirtualGears:
 
         while type(direction) != float:
             try:
+                self.display_map()
                 direction = float(input('What is the direction of the entrance relative to the origin? (degrees): '))
             except ValueError:
                 print(direction)
