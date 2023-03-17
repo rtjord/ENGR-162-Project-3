@@ -1,7 +1,7 @@
 from brickpi3 import BrickPi3
 from time import sleep
 import pandas as pd
-from helpers import get_dps
+from helpers import get_dps, linear_regression, round_half_up
 from path_finding import *
 from hardware import read_ultrasonic
 from constants import *
@@ -69,7 +69,6 @@ class Gears(BrickPi3):
                                              'Parameter',
                                              'Resource X Coordinate',
                                              'Resource Y Coordinate'])
-        self.visualizer = visualizer
 
         # ADDITIONAL ATTRIBUTES
         self.on = False  # Is GEARS on?
@@ -143,11 +142,20 @@ class Gears(BrickPi3):
 
     # Keep GEARS from exiting through the entrance
     def setup(self):
+
         # Place a phantom wall at the entrance to keep GEARS from exiting through the entrance.
         # This solution is more flexible than simply marking the origin with a wall because it
         # allows GEARS to return to the origin.
-        self.display_map()
-        direction = float(input('What is the direction of the entrance relative to the origin? (degrees): '))
+        direction = ''
+
+        while type(direction) != float:
+            try:
+                self.display_map()
+                direction = float(input('What is the direction of the entrance relative to the origin? (degrees): '))
+            except ValueError:
+                print(direction)
+                print('Error: Please enter a number')
+
         x, y = self.get_neighbor_coordinates(direction)
         self.update_map(x, y, WALL)
 
@@ -292,8 +300,8 @@ class Gears(BrickPi3):
 
     # Convert coordinates (tile widths) to row and column indices
     def coordinates_to_indices(self, x_coordinate, y_coordinate):
-        row = round(self.origin_row - y_coordinate)
-        col = round(self.origin_col + x_coordinate)
+        row = round_half_up(self.origin_row - y_coordinate)
+        col = round_half_up(self.origin_col + x_coordinate)
         return row, col
 
     # Convert indices to coordinates (tile widths)
@@ -397,8 +405,15 @@ class Gears(BrickPi3):
         self.map[row][col] = mark
 
     # Display a polished map output
-    def display_map(self):
+    def display_map(self, show_coordinates=False):
         map_copy = self.map.copy()
+
+        if show_coordinates:
+            for col in range(map_copy.shape[1]):
+                x, y = self.indices_to_coordinates(0, col)
+                print(f'{x:3.0f}', end='')
+            print()
+
         print('---' * map_copy.shape[1])
 
         for i, row in enumerate(map_copy):
@@ -421,7 +436,12 @@ class Gears(BrickPi3):
                     color = ''
 
                 print(color + char + RESET + ', ', end='')
-            print('|')
+
+            if not show_coordinates:
+                print(f'|')
+            if show_coordinates:
+                x, y = self.indices_to_coordinates(i, 0)
+                print(f'|{y:2.0f}')
         print('---' * map_copy.shape[1])
 
     def write_map(self):
@@ -508,6 +528,12 @@ class Gears(BrickPi3):
         return graph
 
     def set_target(self):
+        if self.mode != 'target':
+            print(f'Warning: mode is not set to target')
+            decision = str(input('Proceed? (y/n): '))
+            if decision == 'n':
+                return
+
         self.target_x = float(input('Enter the x-coordinate: '))
         self.target_y = float(input('Enter the y-coordinate: '))
         self.update_map(self.target_x, self.target_y, TARGET)
@@ -581,6 +607,15 @@ class Gears(BrickPi3):
         # find a path from GEARS to the target
         node_path = find_path(graph, source_node, target_node, num_cols)
 
+        # if unable to find a path
+        if node_path is None:
+            self.target_failure()  # record the failure
+            self.path = []  # make path empty
+            return  # try again
+
+        # if successful, reset fails
+        self.target_fails = 0
+
         # convert nodes to indices
         indices_path = [node_to_indices(x, y, num_rows) for x, y in node_path]
 
@@ -601,11 +636,6 @@ class Gears(BrickPi3):
 
         # if gears has reached the lead
         if self.near(self.lead_x, self.lead_y, 0.1):
-
-            # if visualizer is True
-            if self.visualizer:
-                os.system("cls")  # clear the terminal
-                self.display_map()  # display the updated map
 
             # move the lead to the next point on the path
             self.path_index += 1
@@ -658,8 +688,21 @@ class Gears(BrickPi3):
     # Determine the turning constant
     def calibrate_turns(self):
 
+        if not self.on:
+            print('Warning: GEARS is not on. Calibrating while off may cause infinite loop.')
+            decision = str(input('Proceed? (y/n): '))
+            if decision == 'n':
+                return
+
         # Get the turning constant from the user
-        self.turning_constant = float(input('Enter the turning constant: '))
+        valid_input = False
+
+        while not valid_input:
+            try:
+                self.turning_constant = float(input('Enter the turning constant: '))
+                valid_input = True
+            except ValueError:
+                print('Error. Please enter a number.')
 
         # reset all relevant variables
         self.reset_motor_encoders()
@@ -670,9 +713,7 @@ class Gears(BrickPi3):
         self.set_heading(180, turn=True)
         self.wait_for_turn()
 
-        left_encoder = self.get_motor_encoder(self.left_wheel)
-        right_encoder = self.get_motor_encoder(self.right_wheel)
-        difference = right_encoder - left_encoder
+        difference = self.right_encoder - self.left_encoder
         print('Encoder difference:', difference, 'degrees')
         print('Turning constant:', self.turning_constant)
         print('Orientation:', self.orientation)
@@ -721,27 +762,24 @@ class Gears(BrickPi3):
             if self.mode == 'auto':
                 self.detect_walls()  # Detect walls with the ultrasonic sensor and mark them on the map
 
-                # If at the target or the target is a wall
-                at_target = self.near(self.target_x, self.target_y, 0.1)
                 path_blocked = self.check_path_blocked()
+                end_of_path = self.path_index >= len(self.path)
+                target_changed = len(self.path) > 0 and self.path[-1] != (self.target_x, self.target_y)
 
-                if at_target or path_blocked:
+                if path_blocked or end_of_path or target_changed:
 
                     # Get a new target
                     target = self.get_nearest_unknown()
 
                     # if unable to find a new target
                     if target is None:
-
-                        # handle the failure
-                        self.target_failure()
-
-                        # try again
-                        return
+                        self.target_failure()  # handle the failure
+                        return  # try again
 
                     # reset number of target fails
                     self.target_fails = 0
 
+                    # update target
                     self.target_x, self.target_y = target
 
                     # Get a path to the new target
@@ -750,21 +788,11 @@ class Gears(BrickPi3):
                     # reset the path index
                     self.path_index = 1
 
-                    # update the visualizer
-                    if self.visualizer:
-                        os.system("cls")
-                        self.display_map()
-
                 self.update_lead()  # move the lead to the next coordinate on the path
                 self.follow_lead()  # move GEARS to the lead
 
             # Task 1 and Integration Task 1/2
             elif self.mode == 'walls':
-
-                # update the visualizer
-                if self.visualizer:
-                    os.system("cls")
-                    self.display_map()
 
                 # detect walls
                 self.detect_walls()
@@ -800,9 +828,6 @@ class Gears(BrickPi3):
             # Will have to update path while exploring to navigate around walls as they are discovered
             # Call method "set_target" to tell GEARS where to go
             elif self.mode == 'target':
-                if self.visualizer:
-                    os.system("cls")
-                    self.display_map()
 
                 # Detect walls with the ultrasonic sensor and mark them on the map
                 # new_wall is True if a new wall was detected
@@ -811,9 +836,13 @@ class Gears(BrickPi3):
                 path_blocked = self.check_path_blocked()
                 end_of_path = self.path_index >= len(self.path)
                 target_changed = len(self.path) > 0 and self.path[-1] != (self.target_x, self.target_y)
+                at_target = self.near(self.target_x, self.target_y, 0.1)
 
                 if path_blocked or end_of_path or target_changed:
-                    print('Recalculating')
+                    if at_target:
+                        return
+
+                    print('Recalculating', end='\r')
 
                     # get a new path to the target
                     self.get_path(self.target_x, self.target_y)

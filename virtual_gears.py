@@ -1,8 +1,7 @@
 import pandas as pd
-from helpers import get_dps
+from helpers import get_dps, linear_regression, round_half_up
 from path_finding import *
 from constants import *
-from helpers import linear_regression, round_half_up
 
 
 class VirtualGears:
@@ -591,6 +590,15 @@ class VirtualGears:
         # find a path from GEARS to the target
         node_path = find_path(graph, source_node, target_node, num_cols)
 
+        # if unable to find a path
+        if node_path is None:
+            self.target_failure()  # record the failure
+            self.path = []  # make path empty
+            return  # try again
+
+        # if successful, reset fails
+        self.target_fails = 0
+
         # convert nodes to indices
         indices_path = [node_to_indices(x, y, num_rows) for x, y in node_path]
 
@@ -748,16 +756,13 @@ class VirtualGears:
 
                     # if unable to find a new target
                     if target is None:
-
-                        # handle the failure
-                        self.target_failure()
-
-                        # try again
-                        return
+                        self.target_failure()  # handle the failure
+                        return  # try again
 
                     # reset number of target fails
                     self.target_fails = 0
 
+                    # update target
                     self.target_x, self.target_y = target
 
                     # Get a path to the new target
@@ -826,7 +831,7 @@ class VirtualGears:
                     if at_target:
                         return
 
-                    print('Recalculating')
+                    print('Recalculating', end='\r')
 
                     # get a new path to the target
                     self.get_path(self.target_x, self.target_y)

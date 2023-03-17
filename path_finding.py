@@ -71,6 +71,7 @@ def remove_node(graph, node, num_cols):
     for i in range(num_nodes):
         arr[index][i] = np.inf
         arr[i][index] = np.inf
+        arr[index][index] = 0
 
     # turn the modified edge array back into a graph
     graph = csr_matrix(arr)
@@ -106,6 +107,9 @@ def find_path(graph, source, target, num_cols):
 
     # find paths from start_index to all the other points in the graph
     distance_matrix, predecessors = dijkstra(graph, directed=False, indices=start_index, return_predecessors=True)
+
+    if distance_matrix[target_index] == np.inf:
+        return None
 
     # start at target and work backwards to find path from target to source
     while target_index != start_index and target_index != -9999:

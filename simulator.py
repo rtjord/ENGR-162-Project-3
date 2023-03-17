@@ -43,8 +43,6 @@ class VirtualUltrasonic:
         mark = self.sim_map[row][col]
 
         if mark == WALL:
-            # if np.isclose(direction, 270, 0, 0.1):
-            #     print(f'Detecting wall at row: {row}, col: {col} from x: {x_coordinate}, y: {y_coordinate}')
             return self.tile_width / 4
         return np.inf
 
@@ -137,8 +135,8 @@ class Simulator:
 
         self.gears.run()  # run main logic for rover
 
-        # if GEARS found the exit
-        if self.gears.near(self.exit_x, self.exit_y, 0.1):
+        # if GEARS found the exit and is in auto mode
+        if self.gears.near(self.exit_x, self.exit_y, 0.1) and self.gears.mode == 'auto':
             print(f'\nGears successfully exited the maze')
             self.finished = True
 
@@ -159,7 +157,7 @@ class Simulator:
 
 
 def main():
-    filename = 'maps/inputs/map2.csv'
+    filename = 'maps/inputs/map3.csv'
     ultrasonic = VirtualUltrasonic(filename=filename, tile_width=40)
     gears = VirtualGears(ultrasonic=ultrasonic, max_speed=500, buffer_time=0.01)  # create a VirtualGears object
     simulator = Simulator(gears, filename, visualizer=True)  # create a simulator object
