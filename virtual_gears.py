@@ -2,22 +2,11 @@ import pandas as pd
 from helpers import get_dps
 from path_finding import *
 from constants import *
-import random
-
-
-def read_ultrasonic():
-
-    # rand = random.randint(0, 1000)
-    #
-    # if rand == 0:
-    #     return 10
-
-    return np.inf
+from helpers import linear_regression, round_half_up
 
 
 class VirtualGears:
-    def __init__(self, mode='auto', max_speed=500, wheel_radius=3, buffer_time=0.01):
-
+    def __init__(self, ultrasonic, mode='auto', max_speed=500, wheel_radius=3, buffer_time=0.01):
         # MOTORS AND WHEELS
         # Assign wheels to BrickPi ports
         self.left_wheel = None
@@ -39,6 +28,7 @@ class VirtualGears:
 
         # SENSORS
         # Ultrasonic Sensor
+        self.ultrasonic = ultrasonic
         self.front_ultrasonic_reading = np.inf
         self.left_ultrasonic_reading = np.inf
         self.right_ultrasonic_reading = np.inf
@@ -78,10 +68,6 @@ class VirtualGears:
         self.buffer_time = buffer_time  # time between cycles (seconds)
         self.mode = mode  # current mode
         self.mode_list = ['auto', 'walls', 'point_turn', 'target', 'manual']  # list of known modes
-
-        # # Place a phantom wall behind GEARS to prevent it from exiting through the entrance
-        # x, y = self.get_neighbor_coordinates(BACK)
-        # self.update_map(x, y, WALL)
 
     # Reset all motor encoders to 0
     def reset_motor_encoders(self):
@@ -178,6 +164,11 @@ class VirtualGears:
         x_coordinate, y_coordinate = self.indices_to_coordinates(row, col)
         return x_coordinate, y_coordinate
 
+    def read_ultrasonic(self, direction):
+        sensor_reading = self.ultrasonic.read(self.x_coordinate, self.y_coordinate, self.heading + direction)
+        distance = linear_regression(sensor_reading, 0.9423, 2.2666)
+        return distance
+
     # detect walls with the ultrasonic sensor and record them on the map
     def detect_walls(self):
 
@@ -186,9 +177,9 @@ class VirtualGears:
             return False
 
         # Get wall distance
-        front_distance = read_ultrasonic()
-        left_distance = read_ultrasonic()
-        right_distance = read_ultrasonic()
+        front_distance = self.read_ultrasonic(FRONT)
+        left_distance = self.read_ultrasonic(LEFT)
+        right_distance = self.read_ultrasonic(RIGHT)
 
         # Get the coordinates of the tiles that sensors are pointing at
         front_x, front_y = self.get_neighbor_coordinates(FRONT)
@@ -244,8 +235,6 @@ class VirtualGears:
         except IndexError:
             right_mark = UNKNOWN
 
-        print(left_mark, front_mark, right_mark)
-        print(f'({left_x, right_y}), ({front_x, front_y}), ({right_x, right_y})')
         if left_mark != WALL and left_mark != PATH and left_mark != ORIGIN:
             self.turn_left()
         elif front_mark != WALL and front_mark != PATH and front_mark != ORIGIN:
@@ -303,8 +292,8 @@ class VirtualGears:
 
     # Convert coordinates (tile widths) to row and column indices
     def coordinates_to_indices(self, x_coordinate, y_coordinate):
-        row = round(self.origin_row - y_coordinate)
-        col = round(self.origin_col + x_coordinate)
+        row = round_half_up(self.origin_row - y_coordinate)
+        col = round_half_up(self.origin_col + x_coordinate)
         return row, col
 
     # Convert indices to coordinates (tile widths)
