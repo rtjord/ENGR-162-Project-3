@@ -69,8 +69,6 @@ class Gears(BrickPi3):
                                              'Parameter',
                                              'Resource X Coordinate',
                                              'Resource Y Coordinate'])
-        self.map_number = 0
-        self.notes = ''
         self.visualizer = visualizer
 
         # ADDITIONAL ATTRIBUTES
@@ -142,6 +140,15 @@ class Gears(BrickPi3):
     def wait_for_turn(self):
         while self.turning:
             self.correct_orientation()
+
+    # Keep GEARS from exiting through the entrance
+    def setup(self):
+        # Place a phantom wall at the entrance to keep GEARS from exiting through the entrance.
+        # This solution is more flexible than simply marking the origin with a wall because it
+        # allows GEARS to return to the origin.
+        direction = float(input('What is the direction of the entrance relative to the origin? (degrees): '))
+        x, y = self.get_neighbor_coordinates(direction)
+        self.update_map(x, y, WALL)
 
     # record hazard in a dataframe
     def record_hazard(self, hazard_type, parameter, value, x, y):
@@ -392,9 +399,11 @@ class Gears(BrickPi3):
     def display_map(self):
         map_copy = self.map.copy()
         print('---' * map_copy.shape[1])
-        for row in map_copy:
+
+        for i, row in enumerate(map_copy):
             print('|', end='')
-            for char in row:
+            for j, char in enumerate(row):
+                coordinates = self.indices_to_coordinates(i, j)
                 if char == ORIGIN:
                     color = CYAN
                 elif char == GEARS:
@@ -405,6 +414,8 @@ class Gears(BrickPi3):
                     color = RED
                 elif char == TARGET:
                     color = PURPLE
+                elif coordinates in self.path:
+                    color = LIGHT_GREY
                 else:
                     color = ''
 
@@ -413,7 +424,7 @@ class Gears(BrickPi3):
         print('---' * map_copy.shape[1])
 
     def write_map(self):
-        print('Writing map to file')
+        print('\nWriting map to file')
         output_map = np.zeros(self.map.shape, dtype='int32')
         output_map[self.map == PATH] = 1
         output_map[self.map == ORIGIN] = 5
@@ -425,24 +436,24 @@ class Gears(BrickPi3):
         row_indices, col_indices = np.where(output_map != 0)
         output_map = output_map[min(row_indices):max(row_indices) + 1, min(col_indices):max(col_indices) + 1]
 
-        self.get_map_number()
-        self.get_notes()
-        output_file = f"maps/outputs/map{self.map_number}.csv"
+        map_number = str(input('Map number: '))
+        output_file = f"maps/outputs/map{map_number}.csv"
+        notes = str(input('Notes: '))
+
+        num_rows, num_cols = output_map.shape
+        rows, cols = np.where(output_map == 5)
+        row = rows[0]
+        col = cols[0]
+        x = col
+        y = num_rows - row - 1
 
         with open(output_file, "w") as f:
             f.write("Team: 04\n")
             f.write(f"Map: {self.map_number}\n")
             f.write(f"Unit Length: {self.tile_width}\n")
             f.write("Unit: cm\n")
-
-            num_rows, num_cols = output_map.shape
-            rows, cols = np.where(output_map == 5)
-            row = rows[0]
-            col = cols[0]
-            x = col
-            y = num_rows - row - 1
             f.write(f"Origin: ({x}, {y})\n")
-            f.write(f'Notes: {self.notes}\n')
+            f.write(f'Notes: {notes}\n')
 
             for row in range(num_rows):
                 for col in range(num_cols):
@@ -451,18 +462,12 @@ class Gears(BrickPi3):
                         f.write(",")
                 f.write("\n")
 
-    def get_map_number(self):
-        self.map_number = input('Map number: ')
-
-    def get_notes(self):
-        self.notes = str(input('Notes: '))
-
     def write_hazards(self):
-        print('Writing hazards to file')
-        self.get_map_number()
-        self.get_notes()
+        print('\nWriting hazards to file')
 
         filename = 'maps/outputs/team04_hazards.csv'
+        map_number = str(input('Map number: '))
+        notes = str(input('Notes: '))
 
         hazards = self.hazards.to_csv()
         hazards = hazards[1:]
@@ -471,8 +476,8 @@ class Gears(BrickPi3):
 
         with open(filename, 'w') as f:
             f.write('Team: 04\n')
-            f.write(f'Map: {self.map_number}\n')
-            f.write(f'Notes: {self.notes}\n\n')
+            f.write(f'Map: {map_number}\n')
+            f.write(f'Notes: {notes}\n\n')
             f.write(hazards)
 
     # Set the heading and turn to face it
@@ -802,8 +807,13 @@ class Gears(BrickPi3):
                 # new_wall is True if a new wall was detected
                 new_wall = self.detect_walls()
 
-                # if a new wall is detected or there is no path
-                if new_wall or self.path == []:
+                path_blocked = self.check_path_blocked()
+                end_of_path = self.path_index >= len(self.path)
+                target_changed = len(self.path) > 0 and self.path[-1] != (self.target_x, self.target_y)
+
+                if path_blocked or end_of_path or target_changed:
+                    print('Recalculating')
+
                     # get a new path to the target
                     self.get_path(self.target_x, self.target_y)
 

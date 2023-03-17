@@ -2,7 +2,6 @@ import pandas as pd
 from helpers import get_dps
 from path_finding import *
 from constants import *
-import os
 import random
 
 
@@ -17,7 +16,7 @@ def read_ultrasonic():
 
 
 class VirtualGears:
-    def __init__(self, mode='auto', max_speed=500, wheel_radius=3, buffer_time=0.01, visualizer=False):
+    def __init__(self, mode='auto', max_speed=500, wheel_radius=3, buffer_time=0.01):
 
         # MOTORS AND WHEELS
         # Assign wheels to BrickPi ports
@@ -73,7 +72,6 @@ class VirtualGears:
                                              'Parameter',
                                              'Resource X Coordinate',
                                              'Resource Y Coordinate'])
-        self.visualizer = visualizer
 
         # ADDITIONAL ATTRIBUTES
         self.on = False  # Is GEARS on?
@@ -151,7 +149,15 @@ class VirtualGears:
         # Place a phantom wall at the entrance to keep GEARS from exiting through the entrance.
         # This solution is more flexible than simply marking the origin with a wall because it
         # allows GEARS to return to the origin.
-        direction = float(input('What is the direction of the entrance relative to the origin? (degrees): '))
+        direction = ''
+
+        while type(direction) != float:
+            try:
+                direction = float(input('What is the direction of the entrance relative to the origin? (degrees): '))
+            except ValueError:
+                print(direction)
+                print('Error: Please enter a number')
+
         x, y = self.get_neighbor_coordinates(direction)
         self.update_map(x, y, WALL)
 
@@ -391,11 +397,19 @@ class VirtualGears:
         self.map[row][col] = mark
 
     # Display a polished map output
-    def display_map(self):
+    def display_map(self, show_coordinates=False):
         map_copy = self.map.copy()
+
+        if show_coordinates:
+            for col in range(map_copy.shape[1]):
+                x, y = self.indices_to_coordinates(0, col)
+                print(f'{x:3.0f}', end='')
+            print()
+
         print('---' * map_copy.shape[1])
 
         for i, row in enumerate(map_copy):
+            print('|', end='')
             for j, char in enumerate(row):
                 coordinates = self.indices_to_coordinates(i, j)
                 if char == ORIGIN:
@@ -414,7 +428,12 @@ class VirtualGears:
                     color = ''
 
                 print(color + char + RESET + ', ', end='')
-            print('|')
+
+            if not show_coordinates:
+                print(f'|')
+            if show_coordinates:
+                x, y = self.indices_to_coordinates(i, 0)
+                print(f'|{y:2.0f}')
         print('---' * map_copy.shape[1])
 
     def write_map(self):
@@ -501,6 +520,12 @@ class VirtualGears:
         return graph
 
     def set_target(self):
+        if self.mode != 'target':
+            print(f'Warning: mode is not set to target')
+            decision = str(input('Proceed? (y/n): '))
+            if decision == 'n':
+                return
+
         self.target_x = float(input('Enter the x-coordinate: '))
         self.target_y = float(input('Enter the y-coordinate: '))
         self.update_map(self.target_x, self.target_y, TARGET)
@@ -595,11 +620,6 @@ class VirtualGears:
         # if gears has reached the lead
         if self.near(self.lead_x, self.lead_y, 0.1):
 
-            # if visualizer is True
-            if self.visualizer:
-                os.system("cls")
-                self.display_map()
-
             # move the lead to the next point on the path
             self.path_index += 1
 
@@ -651,8 +671,21 @@ class VirtualGears:
     # Determine the turning constant
     def calibrate_turns(self):
 
+        if not self.on:
+            print('Warning: GEARS is not on. Calibrating while off may cause infinite loop.')
+            decision = str(input('Proceed? (y/n): '))
+            if decision == 'n':
+                return
+
         # Get the turning constant from the user
-        self.turning_constant = float(input('Enter the turning constant: '))
+        valid_input = False
+
+        while not valid_input:
+            try:
+                self.turning_constant = float(input('Enter the turning constant: '))
+                valid_input = True
+            except ValueError:
+                print('Error. Please enter a number.')
 
         # reset all relevant variables
         self.reset_motor_encoders()
@@ -712,12 +745,11 @@ class VirtualGears:
             if self.mode == 'auto':
                 self.detect_walls()  # Detect walls with the ultrasonic sensor and mark them on the map
 
-                # If at the target or the target is a wall
-                at_target = self.near(self.target_x, self.target_y, 0.1)
                 path_blocked = self.check_path_blocked()
+                end_of_path = self.path_index >= len(self.path)
+                target_changed = len(self.path) > 0 and self.path[-1] != (self.target_x, self.target_y)
 
-                # if at the end of the path or the path is blocked
-                if self.path_index >= len(self.path) or path_blocked:
+                if path_blocked or end_of_path or target_changed:
 
                     # Get a new target
                     target = self.get_nearest_unknown()
@@ -742,22 +774,12 @@ class VirtualGears:
                     # reset the path index
                     self.path_index = 1
 
-                    # update the visualizer
-                    if self.visualizer:
-                        os.system("cls")
-                        self.display_map()
-
                 self.update_lead()  # move the lead to the next coordinate on the path
                 self.follow_lead()  # move GEARS to the lead
 
             # Task 1 and Integration Task 1/2
             # Deprecated. Delete after confirming that path finding works with hardware
             elif self.mode == 'walls':
-
-                # update the visualizer
-                if self.visualizer:
-                    os.system("cls")
-                    self.display_map()
 
                 # detect walls
                 self.detect_walls()
@@ -797,11 +819,7 @@ class VirtualGears:
             # If so, combine target with the main demo code. GEARS would trace a path to the exit.
             # If GEARS detects a wall, trace a new path to the exit. You could also trace a new path to the
             # exit each cycle as shown below, but that requires more computation time.
-
             elif self.mode == 'target':
-                if self.visualizer:
-                    os.system("cls")
-                    self.display_map()
 
                 # Detect walls with the ultrasonic sensor and mark them on the map
                 # new_wall is True if a new wall was detected
@@ -810,8 +828,13 @@ class VirtualGears:
                 path_blocked = self.check_path_blocked()
                 end_of_path = self.path_index >= len(self.path)
                 target_changed = len(self.path) > 0 and self.path[-1] != (self.target_x, self.target_y)
+                at_target = self.near(self.target_x, self.target_y, 0.1)
 
                 if path_blocked or end_of_path or target_changed:
+                    if at_target:
+                        return
+
+                    print('Recalculating')
 
                     # get a new path to the target
                     self.get_path(self.target_x, self.target_y)
