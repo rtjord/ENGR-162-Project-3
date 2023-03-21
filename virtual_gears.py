@@ -181,7 +181,7 @@ class VirtualGears:
 
         # do not detect walls while turning or near the halfway mark between tiles
         if self.turning or near_half:
-            return False
+            return
 
         # Get wall distance
         front_distance = self.read_ultrasonic(FRONT)
@@ -192,9 +192,6 @@ class VirtualGears:
         front_x, front_y = self.get_neighbor_coordinates(FRONT)
         left_x, left_y = self.get_neighbor_coordinates(LEFT)
         right_x, right_y = self.get_neighbor_coordinates(RIGHT)
-
-        # create a copy of the map before making marks for later comparison
-        map_copy = self.map.copy()
 
         # If the sensors detect a wall, mark it
         # Otherwise, mark the tile as clear
@@ -212,10 +209,6 @@ class VirtualGears:
             self.update_map(right_x, right_y, WALL)
         else:
             self.update_map(right_x, right_y, CLEAR)
-
-        old_walls = map_copy == WALL
-        new_walls = self.map == WALL
-        return not np.all(old_walls == new_walls)
 
     # default behavior when not following path
     def avoid_walls(self):
@@ -371,10 +364,6 @@ class VirtualGears:
             if self.map[row][col] != UNKNOWN:
                 # Do not overwrite that mark
                 return
-
-        # If marking the lead
-        if mark == LEAD:
-            self.map[self.map == LEAD] = PATH  # Clear previous lead
 
         self.map[row][col] = mark
 
@@ -566,6 +555,7 @@ class VirtualGears:
 
         # if this is the first failure
         if self.target_fails == 1:
+
             # Expand the map in all directions, marking each new tile as unknown
             self.map = np.pad(self.map, [(1, 1), (1, 1)], mode='constant', constant_values=UNKNOWN)
 
@@ -638,17 +628,16 @@ class VirtualGears:
 
     # Move to the lead (no diagonals)
     def follow_lead(self):
-        x_position, y_position = self.coordinates_to_position(self.lead_x, self.lead_y)
 
-        # if GEARS is more than 1 cm away from the lead in the x direction
-        if not np.isclose(self.x_position, x_position, 0, 1):
-            delta_x = x_position - self.x_position
+        # if GEARS is more than 0.1 tile widths away from the lead in the x direction
+        if not np.isclose(self.x_coordinate, self.lead_x, 0, 0.1):
+            delta_x = self.lead_x - self.x_coordinate
             delta_y = 0
 
-        # if GEARS is more than 1 cm away from the lead in the y direction
-        elif not np.isclose(self.y_position, y_position, 0, 1):
+        # if GEARS is more than 0.1 tile widths away from the lead in the y direction
+        elif not np.isclose(self.y_coordinate, self.lead_y, 0, 0.1):
             delta_x = 0
-            delta_y = y_position - self.y_position
+            delta_y = self.lead_y - self.y_coordinate
 
         # if GEARS is within 1 cm of the lead in both directions, do nothing
         else:
@@ -670,9 +659,7 @@ class VirtualGears:
 
     #  Return True if the path runs into a wall. Else return false
     def check_path_blocked(self):
-
-        # for each coordinate pair in the path
-        for x, y in self.path:
+        for x, y in self.path:  # for each coordinate pair in the path
             mark = self.get_mark(x, y)  # get the mark at that coordinate
             if mark == WALL:  # if the mark is a wall
                 return True
@@ -726,9 +713,7 @@ class VirtualGears:
 
         # If GEARS is off and the motor dps is being set to a nonzero value
         if not self.on and (self.left_dps != 0 or self.right_dps != 0):
-
-            # Do not update the motor dps values
-            return
+            return  # Do not update the motor encoder values
 
         # Update the motor encoder values
         self.left_encoder += self.left_dps * self.buffer_time
@@ -763,31 +748,23 @@ class VirtualGears:
             if self.mode == 'auto':
                 self.detect_walls()  # Detect walls with the ultrasonic sensor and mark them on the map
 
-                path_blocked = self.check_path_blocked()
-                end_of_path = self.path_index >= len(self.path)
+                path_blocked = self.check_path_blocked()  # check for a wall in the path
+                end_of_path = self.path_index >= len(self.path)  # check if the end of the path has been reached
+
+                # check if the end of the path is still the target
                 target_changed = len(self.path) > 0 and self.path[-1] != (self.target_x, self.target_y)
 
                 if path_blocked or end_of_path or target_changed:
+                    target = self.get_nearest_unknown()  # Get a new target
 
-                    # Get a new target
-                    target = self.get_nearest_unknown()
-
-                    # if unable to find a new target
-                    if target is None:
+                    if target is None:  # if unable to find a new target
                         self.target_failure()  # handle the failure
                         return  # try again
 
-                    # reset number of target fails
-                    self.target_fails = 0
-
-                    # update target
-                    self.target_x, self.target_y = target
-
-                    # Get a path to the new target
-                    self.get_path(self.target_x, self.target_y)
-
-                    # reset the path index
-                    self.path_index = 1
+                    self.target_fails = 0  # reset number of target fails
+                    self.target_x, self.target_y = target  # update target
+                    self.get_path(self.target_x, self.target_y)  # Get a path to the new target
+                    self.path_index = 1  # reset the path index
 
                 self.update_lead()  # move the lead to the next coordinate on the path
                 self.follow_lead()  # move GEARS to the lead
@@ -795,21 +772,13 @@ class VirtualGears:
             # Task 1 and Integration Task 1/2
             # Deprecated. Delete after confirming that path finding works with hardware
             elif self.mode == 'walls':
-
-                # detect walls
-                self.detect_walls()
-
-                # Avoid hitting the walls
-                self.avoid_walls()
+                self.detect_walls()  # detect walls
+                self.avoid_walls()  # Avoid hitting the walls
 
             # Task 2 (no cargo) and Task 6 (cargo)
             elif self.mode == 'point_turn':
-
-                # get a heading from the user
-                angle = float(input('Enter the desired angle: '))
-
-                # turn to face that heading
-                self.set_heading(angle, turn=True)
+                angle = float(input('Enter the desired angle: '))  # get a heading from the user
+                self.set_heading(angle, turn=True)  # turn to face that heading
 
             # TODO: PoC Task 3, Avoid Hazards
             # 1. Get the magnetic sensor working
@@ -835,24 +804,21 @@ class VirtualGears:
             # If GEARS detects a wall, trace a new path to the exit. You could also trace a new path to the
             # exit each cycle as shown below, but that requires more computation time.
             elif self.mode == 'target':
+                self.detect_walls()  # Detect walls with the ultrasonic sensor and mark them on the map
 
-                # Detect walls with the ultrasonic sensor and mark them on the map
-                # new_wall is True if a new wall was detected
-                new_wall = self.detect_walls()
+                path_blocked = self.check_path_blocked()  # check for a wall in the path
+                end_of_path = self.path_index >= len(self.path)  # check if the end of the path has been reached
 
-                path_blocked = self.check_path_blocked()
-                end_of_path = self.path_index >= len(self.path)
+                # check if the end of the path is still the target
                 target_changed = len(self.path) > 0 and self.path[-1] != (self.target_x, self.target_y)
-                at_target = self.near(self.target_x, self.target_y, 0.1)
+                at_target = self.near(self.target_x, self.target_y, 0.1)  # check if GEARS is at the target
 
                 if path_blocked or end_of_path or target_changed:
-                    if at_target:
-                        return
+                    if at_target:  # if GEARS has reached the target
+                        return  # Do nothing
 
-                    print('Recalculating', end='\r')
-
-                    # get a new path to the target
-                    self.get_path(self.target_x, self.target_y)
+                    print('Recalculating', end='\r')  # alert the user that a new path is being calculated
+                    self.get_path(self.target_x, self.target_y)  # get a new path to the target
 
                 self.update_lead()  # move the lead to the next coordinate on the path
                 self.follow_lead()  # move GEARS to the lead

@@ -4,6 +4,7 @@ from gears import Gears
 from terminal import Terminal
 import os
 import platform
+import numpy as np
 
 
 def main():

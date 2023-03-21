@@ -179,7 +179,7 @@ class Gears(BrickPi3):
 
         # do not detect walls while turning
         if self.turning:
-            return False
+            return
 
         # Get wall distance
         front_distance = read_ultrasonic(self.front_ultrasonic)
@@ -190,9 +190,6 @@ class Gears(BrickPi3):
         front_x, front_y = self.get_neighbor_coordinates(FRONT)
         left_x, left_y = self.get_neighbor_coordinates(LEFT)
         right_x, right_y = self.get_neighbor_coordinates(RIGHT)
-
-        # create a copy of the map before making marks for later comparison
-        map_copy = self.map.copy()
 
         # If the sensors detect a wall, mark it
         # Otherwise, mark the tile as clear
@@ -210,10 +207,6 @@ class Gears(BrickPi3):
             self.update_map(right_x, right_y, WALL)
         else:
             self.update_map(right_x, right_y, CLEAR)
-
-        old_walls = map_copy == WALL
-        new_walls = self.map == WALL
-        return not np.all(old_walls == new_walls)
 
     # default behavior when not following path
     def avoid_walls(self):
@@ -397,10 +390,6 @@ class Gears(BrickPi3):
                 # Do not overwrite that mark
                 return
 
-        # If marking the lead
-        if mark == LEAD:
-            self.map[self.map == LEAD] = PATH  # Clear previous lead
-
         self.map[row][col] = mark
 
     # Display a polished map output
@@ -469,7 +458,7 @@ class Gears(BrickPi3):
 
         with open(output_file, "w") as f:
             f.write("Team: 04\n")
-            f.write(f"Map: {self.map_number}\n")
+            f.write(f"Map: {map_number}\n")
             f.write(f"Unit Length: {self.tile_width}\n")
             f.write("Unit: cm\n")
             f.write(f"Origin: ({x}, {y})\n")
@@ -640,19 +629,18 @@ class Gears(BrickPi3):
 
     # Move to the lead (no diagonals)
     def follow_lead(self):
-        x_position, y_position = self.coordinates_to_position(self.lead_x, self.lead_y)
 
-        # if GEARS is more than 1 cm away from the lead in the x direction
-        if not np.isclose(self.x_position, x_position, 1):
-            delta_x = x_position - self.x_position
+        # if GEARS is more than 0.1 tile widths away from the lead in the x direction
+        if not np.isclose(self.x_coordinate, self.lead_x, 0, 0.1):
+            delta_x = self.lead_x - self.x_coordinate
             delta_y = 0
 
-        # if GEARS is more than 1 cm away from the lead in the y direction
-        elif not np.isclose(self.y_position, y_position, 0, 0.1):
+        # if GEARS is more than 0.1 tile widths away from the lead in the y direction
+        elif not np.isclose(self.y_coordinate, self.lead_y, 0, 0.1):
             delta_x = 0
-            delta_y = y_position - self.y_position
+            delta_y = self.lead_y - self.y_coordinate
 
-        # if GEARS is within 0.1 tile widths of the lead in both directions, do nothing
+        # if GEARS is within 1 cm of the lead in both directions, do nothing
         else:
             self.stop()
             return
@@ -660,8 +648,8 @@ class Gears(BrickPi3):
         # get the heading
         heading = np.degrees(np.arctan2(delta_y, delta_x))
 
-        # turn if the orientation is not within 0.5 degrees of the heading
-        turn = not np.isclose(self.orientation, self.heading, 0, 0.5)
+        # turn if the orientation is not within 1 degree of the heading
+        turn = not np.isclose(self.orientation, self.heading, 0, 1)
 
         self.set_heading(heading, turn=turn)
 
@@ -829,7 +817,7 @@ class Gears(BrickPi3):
 
                 # Detect walls with the ultrasonic sensor and mark them on the map
                 # new_wall is True if a new wall was detected
-                new_wall = self.detect_walls()
+                self.detect_walls()
 
                 path_blocked = self.check_path_blocked()
                 end_of_path = self.path_index >= len(self.path)

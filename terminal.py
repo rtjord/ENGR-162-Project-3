@@ -3,6 +3,7 @@
 from threading import Thread, get_ident
 from virtual_gears import VirtualGears
 import os
+import platform
 
 
 # Cast var to a new data type
@@ -245,7 +246,12 @@ class Terminal:
         if len(args) > 0:
             print('Warning: clear command requires no additional arguments')
 
-        os.system("cls")
+        if platform.system() == 'Windows':
+            os.system('cls')  # clear the terminal
+        elif platform.system() == 'Linux':
+            os.system('clear')
+        else:
+            print('Unrecognized system')
         self.print_commands()
 
     # Exit the terminal

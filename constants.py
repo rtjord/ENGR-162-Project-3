@@ -1,7 +1,6 @@
 ORIGIN = 'O'
 PATH = 'X'
 GEARS = 'G'
-LEAD = 'L'
 TARGET = 'T'
 WALL = '!'
 CLEAR = ' '
