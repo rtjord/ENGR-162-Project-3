@@ -92,7 +92,7 @@ class VirtualGears:
     # Turn 90 degrees right
     def turn_right(self):
         if not self.turning:
-            self.set_heading(self.heading + 90, turn=True)
+            self.set_heading(self.heading - 90, turn=True)
 
     # Do not move
     def stop(self):
@@ -466,7 +466,7 @@ class VirtualGears:
 
     # Set the heading and turn to face it
     def set_heading(self, degrees, turn=False):
-        self.heading = degrees % 360
+        self.heading = degrees
         self.turning = turn
 
     def construct_graph(self):
@@ -568,6 +568,7 @@ class VirtualGears:
         # if unable to find a new target after expanding the map
         if self.target_fails == 2:
             print('GEARS may be trapped')
+            self.stop()
 
     # Get a new path from GEARS to the nearest unknown point
     def get_path(self, target_x, target_y):

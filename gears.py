@@ -8,7 +8,7 @@ from constants import *
 
 
 class Gears(BrickPi3):
-    def __init__(self, mode='auto', max_speed=15, wheel_radius=3, buffer_time=0.01, visualizer=False):
+    def __init__(self, mode='auto', max_speed=15, wheel_radius=3, buffer_time=0.01):
 
         # Initialize parent class
         BrickPi3.__init__(self)
@@ -491,7 +491,7 @@ class Gears(BrickPi3):
 
     # Set the heading and turn to face it
     def set_heading(self, degrees, turn=False):
-        self.heading = degrees % 360
+        self.heading = degrees
         self.turning = turn
 
     def construct_graph(self):
@@ -569,6 +569,7 @@ class Gears(BrickPi3):
         # if unable to find a new target after expanding the map
         if self.target_fails == 2:
             print('GEARS may be trapped')
+            self.stop()
 
     # Get a new path from GEARS to the nearest unknown point
     def get_path(self, target_x, target_y):

@@ -6,6 +6,7 @@ import numpy as np
 from constants import *
 import os
 import platform
+from time import sleep
 
 
 def load_map(filename):
@@ -36,7 +37,6 @@ class VirtualUltrasonic:
 
         in_bounds = 0 <= row < self.sim_map.shape[0] and 0 <= col < self.sim_map.shape[1]
         if not in_bounds:
-
             # GEARS is requesting information beyond the sim map
             return np.inf  # no obstacle detected
 
@@ -157,22 +157,49 @@ class Simulator:
                 self.gears.display_map()  # display the new map
 
 
+def sync_with_hardware(virtual_gears, physical_gears):
+    physical_gears.on = virtual_gears.on
+
+    # sync physical motor dps with virtual motor dps
+    physical_gears.left_dps = virtual_gears.left_dps
+    physical_gears.right_dps = virtual_gears.right_dps
+
+    # sync virtual motor encoder with physical motor encoder
+    virtual_gears.left_encoder = physical_gears.get_motor_encoder(physical_gears.left_wheel)
+    virtual_gears.right_encoder = physical_gears.get_motor_encoder(physical_gears.right_wheel)
+
+    physical_gears.update_motors()  # update the physical motors
+
+
 def main():
     filename = 'maps/inputs/map1.csv'
-    ultrasonic = VirtualUltrasonic(filename=filename, tile_width=40)
-    gears = VirtualGears(ultrasonic=ultrasonic, max_speed=500, timestep=0.01)  # create a VirtualGears object
-    simulator = Simulator(gears, filename, visualizer=True)  # create a simulator object
+    max_speed = 10  # cm/s
+    tile_width = 40  # cm
+    timestep = 0.01  # s
+    hardware_sync = True
+
+    if hardware_sync:
+        from gears import Gears
+        physical_gears = Gears(mode='manual', max_speed=max_speed)
+
+    ultrasonic = VirtualUltrasonic(filename=filename, tile_width=tile_width)
+    virtual_gears = VirtualGears(ultrasonic=ultrasonic, max_speed=max_speed, timestep=timestep)
+    simulator = Simulator(virtual_gears, filename=filename, visualizer=True)
 
     # create a Terminal object
-    terminal = Terminal(gears, on_startup=[gears.setup], on_exit=[gears.display_map,
-                                                                  gears.write_map,
-                                                                  gears.write_hazards,
-                                                                  gears.exit])
+    terminal = Terminal(virtual_gears, on_startup=[virtual_gears.setup], on_exit=[virtual_gears.display_map,
+                                                                                  virtual_gears.write_map,
+                                                                                  virtual_gears.write_hazards,
+                                                                                  virtual_gears.exit])
     terminal.start()  # start the terminal
 
     try:
         while terminal.active:  # while the terminal is active
             simulator.run()  # run the simulator
+
+            if hardware_sync:  # if syncing with the hardware
+                sync_with_hardware(virtual_gears, physical_gears)  # update the physical GEARS
+
             if simulator.finished:  # if the simulation finishes
                 terminal.exit()  # exit the terminal
 
