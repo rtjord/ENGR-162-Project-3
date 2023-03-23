@@ -53,6 +53,7 @@ def grid_graph(m, n):
     return graph
 
 
+# deprecated
 # remove node = (x, y) from the graph
 def remove_node(graph, node, num_cols):
 
@@ -71,12 +72,41 @@ def remove_node(graph, node, num_cols):
     for i in range(num_nodes):
         arr[index][i] = np.inf
         arr[i][index] = np.inf
+        arr[index][index] = 0
 
     # turn the modified edge array back into a graph
     graph = csr_matrix(arr)
     return graph
 
 
+# remove nodes = [(x1, y1), (x2, y2), ..., (xn, yn)] from the graph
+def remove_nodes(graph, node_list, num_cols):
+    arr = graph.toarray()  # get edge array for graph
+    num_nodes = len(arr)  # get the number of nodes in the graph
+
+    # for each node to be removed
+    for node in node_list:
+
+        # get x and y coordinates of node to remove
+        x = node[0]
+        y = node[1]
+
+        # get index of node to remove
+        index = node_to_index(x, y, num_cols)
+
+        # set the edges of the node to be removed to infinity
+        # to cut the node off from the rest of the graph
+        for i in range(num_nodes):
+            arr[index][i] = np.inf
+            arr[i][index] = np.inf
+            arr[index][index] = 0  # ensure every node has a distance of 0 from itself
+
+    # turn the modified edge array back into a graph
+    graph = csr_matrix(arr)
+    return graph
+
+
+# find the unknown node with the shortest distance from the source
 def find_nearest_unknown(graph, source, num_cols, known_nodes):
     start_index = node_to_index(source[0], source[1], num_cols)
     distance_matrix, predecessors = dijkstra(graph, directed=False, indices=start_index, return_predecessors=True)
@@ -107,6 +137,10 @@ def find_path(graph, source, target, num_cols):
     # find paths from start_index to all the other points in the graph
     distance_matrix, predecessors = dijkstra(graph, directed=False, indices=start_index, return_predecessors=True)
 
+    # if the distance from the source to the target is infinite, no path exists
+    if distance_matrix[target_index] == np.inf:
+        return None
+
     # start at target and work backwards to find path from target to source
     while target_index != start_index and target_index != -9999:
         path.append(target_index)
@@ -123,12 +157,14 @@ def find_path(graph, source, target, num_cols):
     return path
 
 
+# convert row and column indices to node (x, y)
 def indices_to_node(row, col, num_rows):
     x_coordinate = col
     y_coordinate = num_rows - row - 1
     return x_coordinate, y_coordinate
 
 
+# convert node (x, y) to row and column indices
 def node_to_indices(x_coordinate, y_coordinate, num_rows):
     row = num_rows - y_coordinate - 1
     col = x_coordinate
