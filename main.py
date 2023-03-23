@@ -8,7 +8,7 @@ import numpy as np
 
 
 def main():
-    gears = Gears(max_speed=15, visualizer=True)  # Create a Gears object
+    gears = Gears(max_speed=10)  # Create a Gears object
 
     # Create a Terminal object
     terminal = Terminal(gears, on_startup=[gears.setup], on_exit=[gears.display_map,

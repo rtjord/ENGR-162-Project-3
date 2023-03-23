@@ -25,8 +25,8 @@ class Gears(BrickPi3):
 
         # Wheels (assumes all wheels have the same radius)
         self.wheel_circumference = 2 * np.pi * wheel_radius  # cm
-        self.turning_constant = 0.135  # convert motor encoder difference to orientation
-        self.turning_gain = 5
+        self.turning_constant = 0.126  # convert motor encoder difference to orientation
+        self.turning_gain = 2
 
         # Motor Speeds
         self.max_dps = get_dps(max_speed, wheel_radius)
@@ -700,7 +700,7 @@ class Gears(BrickPi3):
         self.set_heading(180, turn=True)
         self.wait_for_turn()
 
-        difference = self.right_encoder - self.left_encoder
+        difference = self.get_motor_encoder(self.left_motor) - self.left_encoder
         print('Encoder difference:', difference, 'degrees')
         print('Turning constant:', self.turning_constant)
         print('Orientation:', self.orientation)
