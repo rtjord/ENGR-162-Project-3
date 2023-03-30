@@ -1,9 +1,10 @@
 from brickpi3 import BrickPi3
+import grovepi
 from time import sleep
 import pandas as pd
 from helpers import get_dps, round_half_up
 from path_finding import *
-from hardware import read_ultrasonic
+from hardware import read_ultrasonic, read_infrared
 from constants import *
 
 
@@ -13,12 +14,13 @@ class Gears(BrickPi3):
         # Initialize parent class
         BrickPi3.__init__(self)
 
-        # MOTORS AND WHEELS
+        # MOTORS
         # Assign wheels to BrickPi ports
         self.left_wheel = self.PORT_D
         self.right_wheel = self.PORT_A
 
-        self.all_motors = self.left_wheel + self.right_wheel
+        # Assign IR Sensor motor to BrickPi port
+        self.infrared_motor = self.PORT_B
 
         # Reset all motor encoders to 0
         self.reset_motor_encoders()
@@ -32,12 +34,22 @@ class Gears(BrickPi3):
         self.max_dps = get_dps(max_speed, wheel_radius)
         self.left_dps = 0
         self.right_dps = 0
+        self.infrared_dps = 0
 
         # SENSORS
         # Ultrasonic Sensor
         self.front_ultrasonic = 2
         self.left_ultrasonic = 3
         self.right_ultrasonic = 7
+
+        # IR Sensor (A0)
+        self.right_infrared = 14
+        self.left_infrared = 15
+        grovepi.pinMode(self.right_infrared, "INPUT")
+        grovepi.pinMode(self.left_infrared, "INPUT")
+        self.infrared_direction = 0
+        # TODO: calibrate threshold
+        self.infrared_threshold = 1
 
         # MAP
         self.map = np.array([[ORIGIN]])  # Initialize the map
@@ -83,6 +95,7 @@ class Gears(BrickPi3):
     def reset_motor_encoders(self):
         self.reset_encoder(self.left_wheel)
         self.reset_encoder(self.right_wheel)
+        self.reset_encoder(self.infrared_motor)
 
     # BASIC MOVEMENT METHODS
     # Move straight forward at a constant speed
@@ -109,6 +122,7 @@ class Gears(BrickPi3):
     def stop(self):
         self.left_dps = 0
         self.right_dps = 0
+        self.infrared_dps = 0
 
     # Make GEARS turn until its orientation matches its heading
     def correct_orientation(self):
@@ -207,6 +221,46 @@ class Gears(BrickPi3):
             self.update_map(right_x, right_y, WALL)
         else:
             self.update_map(right_x, right_y, CLEAR)
+
+    def rotate_infrared(self):
+
+        # read direction IR sensor is pointing relative to the orientation of GEARS
+        self.infrared_direction = self.get_motor_encoder(self.infrared_motor)
+
+        if self.infrared_dps == 0:  # if the infrared motor is not turning
+            self.infrared_dps = 100  # set the motor dps to a nonzero value
+
+        # if the infrared motor as rotated more than 180 degrees in either direction
+        if self.infrared_direction >= 180:
+            self.infrared_dps = -100
+        if self.infrared_direction <= -180:
+            self.infrared_dps = 100
+
+    def detect_infrared(self):
+        right_reading = read_infrared(self.right_infrared)  # read right IR sensor
+        left_reading = read_infrared(self.left_infrared)  # read left IR sensor
+        avg = (right_reading + left_reading) / 2  # calculate average IR value
+
+        # if the average reading is greater than the threshold
+        if avg >= self.infrared_threshold:
+
+            # get direction IR sensor is pointing on map
+            direction = self.orientation + self.infrared_direction
+
+            # if the direction is within 10 degrees of a cardinal direction, mark the heat source on the map
+            if -190 <= direction <= -170 or 170 <= direction <= 190:
+                x_coordinate, y_coordinate = self.get_neighbor_coordinates(BACK)
+                self.update_map(x_coordinate, y_coordinate, HEAT)
+            elif -100 <= direction <= -80:
+                x_coordinate, y_coordinate = self.get_neighbor_coordinates(RIGHT)
+                self.update_map(x_coordinate, y_coordinate, HEAT)
+            elif -10 <= direction <= 10:
+                x_coordinate, y_coordinate = self.get_neighbor_coordinates(FRONT)
+                self.update_map(x_coordinate, y_coordinate, HEAT)
+            elif 80 <= direction <= 90:
+                x_coordinate, y_coordinate = self.get_neighbor_coordinates(LEFT)
+                self.update_map(x_coordinate, y_coordinate, HEAT)
+            # else, wait for the sensor to rotate closer to a cardinal direction
 
     # default behavior when not following path
     def avoid_walls(self):
@@ -378,8 +432,8 @@ class Gears(BrickPi3):
             # Replace previous mark with path mark
             self.map[self.map == mark] = PATH
 
-        # Do not overwrite the origin or walls
-        safe_list = [ORIGIN, WALL]
+        # Do not overwrite the origin, walls, or hazards
+        safe_list = [ORIGIN, WALL, HEAT]
         if self.map[row][col] in safe_list:
             return
 
@@ -418,6 +472,8 @@ class Gears(BrickPi3):
                     color = RED
                 elif char == TARGET:
                     color = PURPLE
+                elif char == HEAT:
+                    color = ORANGE
                 elif coordinates in self.path:
                     color = LIGHT_GREY
                 else:
@@ -505,12 +561,17 @@ class Gears(BrickPi3):
 
         # Get the indices of walls of the map
         walls = np.array(np.where(self.map == WALL)).T
+        heat_sources = np.array(np.where(self.map == HEAT)).T
 
         # convert indices to nodes
         wall_nodes = [indices_to_node(row, col, num_rows) for row, col in walls]
+        heat_nodes = [indices_to_node(row, col, num_rows) for row, col in heat_sources]
 
         # remove the walls from the graph
         graph = remove_nodes(graph, wall_nodes, num_cols)
+
+        # remove the heat sources from the graph
+        graph = remove_nodes(graph, heat_nodes, num_cols)
 
         return graph
 
@@ -719,6 +780,7 @@ class Gears(BrickPi3):
         # Update the motor dps values
         self.set_motor_dps(self.left_wheel, self.left_dps)
         self.set_motor_dps(self.right_wheel, self.right_dps)
+        self.set_motor_dps(self.infrared_motor, self.infrared_dps)
 
     # Turn off and reset all motors
     def exit(self):
@@ -747,7 +809,10 @@ class Gears(BrickPi3):
             # MODE DEPENDENT METHODS
             # main demo, Task 5 (no cargo), and Integration Task 5/6 (cargo)
             if self.mode == 'auto':
-                self.detect_walls()  # Detect walls with the ultrasonic sensor and mark them on the map
+                self.detect_walls()  # detect walls with the ultrasonic sensor and mark them on the map
+
+                self.rotate_infrared()  # update the dps value for the infrared motor
+                self.detect_infrared()  # detect heat sources with the IR sensor and mark them on the map
 
                 path_blocked = self.check_path_blocked()
                 end_of_path = self.path_index >= len(self.path)

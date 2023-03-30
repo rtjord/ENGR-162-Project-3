@@ -172,11 +172,11 @@ def sync_with_hardware(virtual_gears, physical_gears):
 
 
 def main():
-    filename = 'maps/inputs/map1.csv'
+    filename = 'maps/inputs/map7.csv'
     max_speed = 10  # cm/s
     tile_width = 40  # cm
     timestep = 0.01  # s
-    hardware_sync = True
+    hardware_sync = False
 
     if hardware_sync:
         from gears import Gears
@@ -188,8 +188,8 @@ def main():
 
     # create a Terminal object
     terminal = Terminal(virtual_gears, on_startup=[virtual_gears.setup], on_exit=[virtual_gears.display_map,
-                                                                                  virtual_gears.write_map,
-                                                                                  virtual_gears.write_hazards,
+                                                                                  # virtual_gears.write_map,
+                                                                                  # virtual_gears.write_hazards,
                                                                                   virtual_gears.exit])
     terminal.start()  # start the terminal
 
