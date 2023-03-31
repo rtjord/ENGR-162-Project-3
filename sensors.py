@@ -14,3 +14,10 @@ def read_infrared(port):
     # TODO: calibrate IR sensor
     distance = linear_regression(sensor_reading, 1, 0)
     return distance
+
+
+def read_imu(imu):
+    magnet = imu.readMagnet()  # Read the magnet
+
+    # Get the magnitude of the reading
+    return magnet['x'], magnet['y'], magnet['z']

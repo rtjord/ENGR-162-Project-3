@@ -133,3 +133,5 @@ dmypy.json
 
 # Machine generated files
 maps/outputs
+
+archive/

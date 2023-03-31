@@ -29,3 +29,7 @@ def round_half_up(n):
         return int(n + 0.5)
     if n < 0:
         return -1 * int(abs(n) + 0.5)
+
+
+def round_to_90(angle):
+    return round(angle / 90) * 90

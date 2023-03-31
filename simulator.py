@@ -6,7 +6,6 @@ import numpy as np
 from constants import *
 import os
 import platform
-from time import sleep
 
 
 def load_map(filename):
@@ -64,7 +63,7 @@ class Simulator:
         self.finished = False
         self.sim_map = load_map(filename)
         self.setup_map()
-        self.display_map()
+        self.display_map(show_coordinates=True)
 
     # Convert indices to coordinates (tile widths)
     def indices_to_coordinates(self, row, col):

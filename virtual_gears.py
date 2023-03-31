@@ -169,6 +169,7 @@ class VirtualGears:
         x_coordinate, y_coordinate = self.indices_to_coordinates(row, col)
         return x_coordinate, y_coordinate
 
+    # get the distance to the nearest obstacle detected by the virtual ultrasonic sensors
     def read_ultrasonic(self, direction):
         sensor_reading = self.ultrasonic.read(self.x_coordinate, self.y_coordinate, self.heading + direction)
         distance = linear_regression(sensor_reading, 0.9423, 2.2666)
@@ -299,6 +300,7 @@ class VirtualGears:
         x_position, y_position = self.coordinates_to_position(x_coordinate, y_coordinate)
         return x_position, y_position
 
+    # use the motor encoders to track the position of GEARS
     def update_position(self):
 
         # If GEARS is turning, do not update its position
@@ -365,9 +367,10 @@ class VirtualGears:
                 # Do not overwrite that mark
                 return
 
+        # place the mark on the map
         self.map[row][col] = mark
 
-    # Display a polished map output
+    # Display a colorful map output
     def display_map(self, show_coordinates=False):
         map_copy = self.map.copy()
 
@@ -394,7 +397,7 @@ class VirtualGears:
                 elif char == TARGET:
                     color = PURPLE
                 elif coordinates in self.path:
-                    color = LIGHT_GREY
+                    color = YELLOW
                 else:
                     color = ''
 
