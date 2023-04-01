@@ -175,7 +175,7 @@ def main():
     max_speed = 10  # cm/s
     tile_width = 40  # cm
     timestep = 0.01  # s
-    hardware_sync = False
+    hardware_sync = True
 
     if hardware_sync:
         from gears import Gears

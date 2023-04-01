@@ -5,7 +5,7 @@ from constants import *
 
 
 class VirtualGears:
-    def __init__(self, ultrasonic, mode='auto', max_speed=500, wheel_radius=3, timestep=0.01):
+    def __init__(self, ultrasonic, mode='auto', max_speed=500, wheel_radius=4, timestep=0.01):
         # MOTORS AND WHEELS
         # Assign wheels to BrickPi ports
         self.left_wheel = None
@@ -17,7 +17,7 @@ class VirtualGears:
 
         # Wheels (assumes all wheels have the same radius)
         self.wheel_circumference = 2 * np.pi * wheel_radius  # cm
-        self.turning_constant = 0.135  # convert motor encoder difference to orientation
+        self.turning_constant = 0.245  # convert motor encoder difference to orientation
         self.turning_gain = 100
 
         # Motor Speeds

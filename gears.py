@@ -4,14 +4,14 @@ from MPU9250 import MPU9250
 from time import sleep
 import pandas as pd
 import math
-from helpers import get_dps, round_half_up, get_magnitude, round_to_90
+from helpers import get_dps, round_half_up, get_magnitude, round_to_90, power_regression, quadratic_regression
 from path_finding import *
 from sensors import read_ultrasonic, read_infrared, read_imu
 from constants import *
 
 
 class Gears(BrickPi3):
-    def __init__(self, mode='auto', max_speed=15, wheel_radius=3, buffer_time=0.01):
+    def __init__(self, mode='auto', max_speed=15, wheel_radius=4, buffer_time=0.01):
 
         # Initialize parent class
         BrickPi3.__init__(self)
@@ -21,22 +21,22 @@ class Gears(BrickPi3):
         self.left_wheel = self.PORT_D
         self.right_wheel = self.PORT_A
 
-        # Assign IR Sensor motor to BrickPi port
-        self.infrared_motor = self.PORT_B
+        # Assign gate to BrickPi port
+        self.gate = self.PORT_B
 
         # Reset all motor encoders to 0
         self.reset_motor_encoders()
 
         # Wheels (assumes all wheels have the same radius)
         self.wheel_circumference = 2 * np.pi * wheel_radius  # cm
-        self.turning_constant = 0.126  # convert motor encoder difference to orientation
-        self.turning_gain = 2
+        self.turning_constant = 0.225  # convert motor encoder difference to orientation
+        self.turning_gain = 5
 
         # Motor Speeds
         self.max_dps = get_dps(max_speed, wheel_radius)
         self.left_dps = 0
         self.right_dps = 0
-        self.infrared_dps = 0
+        self.gate_pos = 0
 
         # SENSORS
         # Ultrasonic Sensor
@@ -49,14 +49,9 @@ class Gears(BrickPi3):
         self.left_infrared = 15
         grovepi.pinMode(self.right_infrared, "INPUT")
         grovepi.pinMode(self.left_infrared, "INPUT")
-        self.infrared_direction = 0
-        # TODO: calibrate infrared threshold
-        self.infrared_threshold = 1
 
         # Magnetic Sensor
         self.imu = MPU9250()  # IMU (magnetic sensor)
-        # TODO: calibrate magnet threshold
-        self.magnet_threshold = 10
 
         # MAP
         self.map = np.array([[ORIGIN]])  # Initialize the map
@@ -129,7 +124,12 @@ class Gears(BrickPi3):
     def stop(self):
         self.left_dps = 0
         self.right_dps = 0
-        self.infrared_dps = 0
+
+    def open_gate(self):
+        self.gate_pos = -90
+
+    def close_gate(self):
+        self.gate_pos = 90
 
     # Make GEARS turn until its orientation matches its heading
     def correct_orientation(self):
@@ -229,34 +229,20 @@ class Gears(BrickPi3):
         else:
             self.update_map(right_x, right_y, CLEAR)
 
-    def rotate_infrared(self):
-
-        # read direction IR sensor is pointing relative to the orientation of GEARS
-        self.infrared_direction = self.get_motor_encoder(self.infrared_motor)
-
-        if self.infrared_dps == 0:  # if the infrared motor is not turning
-            self.infrared_dps = 100  # set the motor dps to a nonzero value
-
-        # if the infrared motor as rotated more than 180 degrees in either direction
-        if self.infrared_direction >= 180:
-            self.infrared_dps = -100
-        if self.infrared_direction <= -180:
-            self.infrared_dps = 100
-
     def detect_infrared(self):
         right_reading = read_infrared(self.right_infrared)  # read right IR sensor
         left_reading = read_infrared(self.left_infrared)  # read left IR sensor
         avg = (right_reading + left_reading) / 2  # calculate average IR value
+        distance = quadratic_regression(avg, 0.00676, -1.8011, 121.0899)
 
         # if the average reading is greater than the threshold
-        if avg >= self.infrared_threshold:
+        if distance <= self.tile_width:
 
             # get direction IR sensor is pointing on map
-            ir_orientation = self.orientation + self.infrared_direction
-            nearest90 = round_to_90(ir_orientation)
+            nearest90 = round_to_90(self.orientation)
 
             # if the source direction is within 10 degrees of a cardinal direction,
-            if np.isclose(ir_orientation, nearest90, 0, 10):
+            if np.isclose(self.orientation, nearest90, 0, 10):
                 flag = nearest90 % 360 / 90
                 if flag == 0:
                     direction = FRONT
@@ -275,7 +261,8 @@ class Gears(BrickPi3):
     def detect_magnets(self):
         x, y, z = read_imu(self.imu)
         magnitude = get_magnitude(x, y, z)
-        if magnitude >= self.magnet_threshold:
+        distance = power_regression(magnitude, 60.3534, -0.3895)
+        if distance <= self.tile_width:
             source_direction = self.orientation + math.atan2(y, x)
             nearest90 = round_to_90(source_direction)
 
@@ -798,8 +785,9 @@ class Gears(BrickPi3):
         # Turn 180 degrees
         self.set_heading(180, turn=True)
         self.wait_for_turn()
+        self.stop()
 
-        difference = self.get_motor_encoder(self.left_motor) - self.left_encoder
+        difference = self.get_motor_encoder(self.left_wheel) - self.get_motor_encoder(self.right_wheel)
         print('Encoder difference:', difference, 'degrees')
         print('Turning constant:', self.turning_constant)
         print('Orientation:', self.orientation)
@@ -818,7 +806,9 @@ class Gears(BrickPi3):
         # Update the motor dps values
         self.set_motor_dps(self.left_wheel, self.left_dps)
         self.set_motor_dps(self.right_wheel, self.right_dps)
-        self.set_motor_dps(self.infrared_motor, self.infrared_dps)
+
+        # update gate position
+        self.set_motor_pos(self.gate, self.gate_pos)
 
     # Turn off and reset all motors
     def exit(self):
@@ -848,10 +838,8 @@ class Gears(BrickPi3):
             # main demo, Task 5 (no cargo), and Integration Task 5/6 (cargo)
             if self.mode == 'auto':
                 self.detect_walls()  # detect walls with the ultrasonic sensor and mark them on the map
-
-                self.rotate_infrared()  # update the dps value for the infrared motor
                 self.detect_infrared()  # detect heat sources with the IR sensor and mark them on the map
-                self.detect_infrared()  # detect magnets with the IMU and mark them on the map
+                self.detect_magnets()  # detect magnets with the IMU and mark them on the map
 
                 path_blocked = self.check_path_blocked()
                 end_of_path = self.path_index >= len(self.path)
@@ -921,9 +909,9 @@ class Gears(BrickPi3):
             elif self.mode == 'target':
 
                 # Detect walls with the ultrasonic sensor and mark them on the map
-                # new_wall is True if a new wall was detected
                 self.detect_walls()
                 self.detect_infrared()
+                self.detect_magnets()
 
                 path_blocked = self.check_path_blocked()
                 end_of_path = self.path_index >= len(self.path)
