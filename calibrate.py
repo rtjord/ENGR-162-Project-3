@@ -5,7 +5,7 @@ from terminal import Terminal
 
 
 def main():
-    gears = Gears(mode='manual', max_speed=10)  # Create a Gears object
+    gears = Gears(mode='manual', max_speed=10, wheel_radius=4)  # Create a Gears object
 
     # Create a Terminal object
     terminal = Terminal(gears, on_startup=[], on_exit=[gears.exit])
