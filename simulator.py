@@ -171,11 +171,11 @@ def sync_with_hardware(virtual_gears, physical_gears):
 
 
 def main():
-    filename = 'maps/inputs/map7.csv'
+    filename = 'maps/inputs/map5.csv'
     max_speed = 10  # cm/s
     tile_width = 40  # cm
     timestep = 0.01  # s
-    hardware_sync = True
+    hardware_sync = False
 
     if hardware_sync:
         from gears import Gears

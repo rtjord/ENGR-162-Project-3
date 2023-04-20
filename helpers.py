@@ -12,6 +12,11 @@ def linear_regression(sensor_reading, slope, y_int):
     return slope * sensor_reading + y_int
 
 
+# Convert sensor reading to measurement using exponential regression model
+def exponential_regression(sensor_reading, coefficient, base):
+    return coefficient * base ** sensor_reading
+
+
 # Convert sensor reading to measurement using power regression model
 def power_regression(sensor_reading, coefficient, power):
     return coefficient * sensor_reading ** power
