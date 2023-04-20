@@ -238,7 +238,7 @@ class Gears(BrickPi3):
             self.update_map(right_x, right_y, CLEAR)
 
     def detect_infrared(self):
-        distance = read_infrared(self.right_infrared, self.left_infrared)  # read right IR sensor
+        distance, magnitude = read_infrared(self.right_infrared, self.left_infrared)  # read right IR sensor
         if distance == np.inf:
             return
         # if the average reading is greater than the threshold

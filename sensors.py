@@ -16,7 +16,7 @@ def read_infrared(port1, port2):
     reading2 = grovepi.analogRead(port2)
     avg = (reading1 + reading2) / 2  # calculate average IR value
     distance = exponential_regression(avg, 303.0348, 0.9726)
-    return distance
+    return distance, avg
 
 
 # return the distance
