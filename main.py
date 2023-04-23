@@ -12,8 +12,8 @@ def main():
 
     # Create a Terminal object
     terminal = Terminal(gears, on_startup=[gears.setup], on_exit=[gears.display_map,
-                                                                  #gears.write_map,
-                                                                  #gears.write_hazards,
+                                                                  gears.write_map,
+                                                                  gears.write_hazards,
                                                                   gears.exit])
     terminal.start()  # Start the terminal
 

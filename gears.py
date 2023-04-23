@@ -258,8 +258,8 @@ class Gears(BrickPi3):
         distance, magnitude = read_infrared(self.right_infrared, self.left_infrared)  # read right IR sensor
         if distance == np.inf:
             return
-        # if the average reading is greater than the threshold
-        if distance <= self.tile_width:
+
+        if distance <= self.tile_width / 2:
 
             # get direction IR sensor is pointing on map
             nearest90 = round_to_90(self.orientation)
@@ -283,39 +283,54 @@ class Gears(BrickPi3):
 
     def detect_magnets(self):
 
+        # do not try to detect magnets while turning
+        if self.turning:
+            return
+
         # get the distance and direction to the nearest magnetic source
         magnitude, distance, direction_vector = read_imu(self.imu)
         x, y, z = direction_vector
 
+        # if the distance is very large, return
         if distance == np.inf:
             return
 
-        if distance <= self.tile_width:
+        # if the magnetic source is in an adjacent tile, increase the magnet count
+        if distance <= self.tile_width / 2:
             self.magnet_count += 1
         else:
             self.magnet_count = 0
 
-        # if the magnetic source is in an adjacent tile
+        # if the magnet was detected 5 times in a row
         if self.magnet_count >= 5:
-            # determine the direction of the magnet relative to GEARS
+
+            # determine the angle of the magnet relative to GEARS
             source_direction = self.orientation + math.atan2(y, x)
+
+            # round to the nearest 90-degree angle
             nearest90 = round_to_90(source_direction)
 
-            # wait until the angle to the magnet is near a multiple of 90 before marking it on the map
-            if np.isclose(source_direction, nearest90, 0, 20):
-                flag = nearest90 % 360 / 90
-                if flag == 0:
-                    direction = FRONT
-                elif flag == 1:
-                    direction = LEFT
-                elif flag == 2:
-                    direction = BACK
-                else:
-                    direction = RIGHT
+            # determine the direction of the magnet relative to GEARS
+            flag = nearest90 % 360 / 90
+            if flag == 0:
+                direction = FRONT
+            elif flag == 1:
+                direction = LEFT
+            elif flag == 2:
+                direction = BACK
+            else:
+                direction = RIGHT
 
+                # get the coordinates of the magnet
                 x_coordinate, y_coordinate = self.get_neighbor_coordinates(direction)
+
+                # mark the magnet on the map
                 self.update_map(x_coordinate, y_coordinate, MAGNET)
+
+                # record the magnet in the hazards table
                 self.record_hazard('MRI', 'Field Strength (uT)', magnitude, x_coordinate, y_coordinate)
+
+                # rest the magnet count
                 self.magnet_count = 0
 
     def get_alignment(self):
@@ -603,9 +618,8 @@ class Gears(BrickPi3):
         filename = 'maps/outputs/team04_hazards.csv'
         map_number = str(input('Map number: '))
         notes = str(input('Notes: '))
-
-        hazards = self.hazards.to_csv()
-        hazards = hazards[1:]
+        self.hazards = self.hazards.drop_duplicates(subset=['Resource Type', 'Resource X Coordinate', 'Resource Y Coordinate'])
+        hazards = self.hazards.to_csv(index=False)
         hazards = hazards.replace(',', ', ')
         hazards = hazards.replace('\r', '')
 
