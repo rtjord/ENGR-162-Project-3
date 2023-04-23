@@ -1,7 +1,7 @@
 from brickpi3 import BrickPi3
 import grovepi
 from MPU9250 import MPU9250
-from time import sleep
+from time import sleep, time
 import pandas as pd
 import math
 from helpers import get_dps, round_half_up, get_magnitude, round_to_90, power_regression, quadratic_regression
@@ -30,7 +30,7 @@ class Gears(BrickPi3):
 
         # Wheels (assumes all wheels have the same radius)
         self.wheel_circumference = 2 * np.pi * wheel_radius  # cm
-        self.turning_constant = 0.223  # convert motor encoder difference to orientation
+        self.turning_constant = 0.220  # convert motor encoder difference to orientation
         self.turning_gain = 5
 
         # Motor Speeds
@@ -54,6 +54,7 @@ class Gears(BrickPi3):
 
         # Magnetic Sensor
         self.imu = MPU9250()  # IMU (magnetic sensor)
+        self.magnet_count = 0
 
         # MAP
         self.map = np.array([[ORIGIN]])  # Initialize the map
@@ -67,6 +68,7 @@ class Gears(BrickPi3):
         self.col = 0  # current column of GEARS on map
         self.orientation = 0  # actual orientation (degrees)
         self.heading = 0  # desired orientation (degrees)
+        self.orientation_correction = 0
         self.turning = False  # Is GEARS currently executing a turn?
         self.prev_left_encoder = 0  # value of left encoder from previous cycle
         self.prev_right_encoder = 0  # value of right encoder from previous cycle
@@ -78,12 +80,14 @@ class Gears(BrickPi3):
         self.lead_y = self.y_coordinate
         self.path_index = 1
         self.target_fails = 0
+        self.walls = []
+        self.wall_distances = []
         self.hazards = pd.DataFrame(columns=['Resource Type',
                                              'Parameter of Interest',
                                              'Parameter',
                                              'Resource X Coordinate',
                                              'Resource Y Coordinate'])
-
+        self.last_alignment = time()
         # ADDITIONAL ATTRIBUTES
         self.on = False  # Is GEARS on?
         self.buffer_time = buffer_time  # time between cycles (seconds)
@@ -182,8 +186,9 @@ class Gears(BrickPi3):
                 print('Error: Please enter a number')
 
         x, y = self.get_neighbor_coordinates(direction)
-        self.update_map(x, y, WALL)
+        self.update_map(x, y, BARRIER)
         self.update_position()
+        self.walls.append(((self.x_coordinate, self.y_coordinate), (x, y)))
 
     # record hazard in a dataframe
     def record_hazard(self, hazard_type, parameter, value, x, y):
@@ -204,7 +209,7 @@ class Gears(BrickPi3):
     # detect walls with the ultrasonic sensor and record them on the map
     def detect_walls(self):
 
-        near_half = np.isclose(self.x_coordinate % 1, 0.5, 0, 0.25) or np.isclose(self.y_coordinate % 1, 0.5, 0, 0.25)
+        near_half = np.isclose(self.x_coordinate % 1, 0.5, 0, 0.4) or np.isclose(self.y_coordinate % 1, 0.5, 0, 0.4)
 
         # do not detect walls while turning or near the halfway mark between tiles
         if self.turning or near_half:
@@ -222,18 +227,30 @@ class Gears(BrickPi3):
 
         # If the sensors detect a wall, mark it
         # Otherwise, mark the point as clear
-        if front_distance < (self.tile_width / 2 - 11):
-            self.update_map(front_x, front_y, WALL)
+        x_coord = round_half_up(self.x_coordinate)
+        y_coord = round_half_up(self.y_coordinate)
+
+        if front_distance < (self.tile_width / 2):
+            wall = ((x_coord, y_coord), (front_x, front_y))
+            if wall not in self.walls:
+                self.update_map(front_x, front_y, WALL)
+                self.walls.append(wall)
         else:
             self.update_map(front_x, front_y, CLEAR)
 
         if left_distance < (self.tile_width / 2):
-            self.update_map(left_x, left_y, WALL)
+            wall = ((x_coord, y_coord), (left_x, left_y))
+            if wall not in self.walls:
+                self.update_map(left_x, left_y, WALL)
+                self.walls.append(wall)
         else:
             self.update_map(left_x, left_y, CLEAR)
 
         if right_distance < (self.tile_width / 2):
-            self.update_map(right_x, right_y, WALL)
+            wall = ((x_coord, y_coord), (right_x, right_y))
+            if wall not in self.walls:
+                self.update_map(right_x, right_y, WALL)
+                self.walls.append(wall)
         else:
             self.update_map(right_x, right_y, CLEAR)
 
@@ -273,9 +290,13 @@ class Gears(BrickPi3):
         if distance == np.inf:
             return
 
-        # if the magnetic source is in an adjacent tile
         if distance <= self.tile_width:
+            self.magnet_count += 1
+        else:
+            self.magnet_count = 0
 
+        # if the magnetic source is in an adjacent tile
+        if self.magnet_count >= 5:
             # determine the direction of the magnet relative to GEARS
             source_direction = self.orientation + math.atan2(y, x)
             nearest90 = round_to_90(source_direction)
@@ -293,43 +314,45 @@ class Gears(BrickPi3):
                     direction = RIGHT
 
                 x_coordinate, y_coordinate = self.get_neighbor_coordinates(direction)
-                self.update_map(x_coordinate, y_coordinate, HEAT)
+                self.update_map(x_coordinate, y_coordinate, MAGNET)
                 self.record_hazard('MRI', 'Field Strength (uT)', magnitude, x_coordinate, y_coordinate)
+                self.magnet_count = 0
 
-    # Deprecated
-    # default behavior when not following path
-    def avoid_walls(self):
-        front_x, front_y = self.get_neighbor_coordinates(FRONT)
-        left_x, left_y = self.get_neighbor_coordinates(LEFT)
-        right_x, right_y = self.get_neighbor_coordinates(RIGHT)
+    def get_alignment(self):
 
-        front_row, front_col = self.coordinates_to_indices(front_x, front_y)
-        left_row, left_col = self.coordinates_to_indices(left_x, left_y)
-        right_row, right_col = self.coordinates_to_indices(right_x, right_y)
+        # read the distance to the left wall
+        left_distance = read_ultrasonic(self.left_ultrasonic)
 
-        try:
-            front_mark = self.map[front_row][front_col]
-        except IndexError:
-            front_mark = UNKNOWN
+        # if stops detecting a wall to the left
+        if self.turning or left_distance > self.tile_width:
 
-        try:
-            left_mark = self.map[left_row][left_col]
-        except IndexError:
-            left_mark = UNKNOWN
+            # clear the log of wall distances
+            self.wall_distances = []
 
-        try:
-            right_mark = self.map[right_row][right_col]
-        except IndexError:
-            right_mark = UNKNOWN
+            # wait until the next cycle
+            return -1
 
-        if left_mark != WALL and left_mark != PATH and left_mark != ORIGIN:
-            self.turn_left()
-        elif front_mark != WALL and front_mark != PATH and front_mark != ORIGIN:
-            self.move_forward()
-        elif right_mark != WALL and right_mark != PATH and right_mark != ORIGIN:
-            self.turn_right()
-        else:
-            self.stop()
+        # log the distance to the left wall and the x, y coordinates of GEARS
+        self.wall_distances.append({'distance': left_distance,
+                                    'x': self.x_coordinate,
+                                    'y': self.y_coordinate})
+
+        # if there are not at least 20 measurements, wait until the next cycle
+        if len(self.wall_distances) <= 20:
+            return -1
+
+        initial = self.wall_distances[0]
+        current = self.wall_distances[-1]
+
+        forward_travel = max(abs(current['x'] - initial['x']), abs(current['y'] - initial['y']))
+        forward_travel *= self.tile_width
+        sideways_travel = initial['distance'] - current['distance']
+
+        if forward_travel > 0:
+            angle = math.atan(sideways_travel / forward_travel)
+            return np.degrees(angle)
+
+        return -1
 
     # expand the map to include the given row and column indices
     def expand_map(self, row, col):
@@ -447,8 +470,17 @@ class Gears(BrickPi3):
 
         # the orientation of GEARS is a constant multiple of the difference between the motor encoder values
         # find the turning constant during calibration
-        self.orientation = self.turning_constant * (right_encoder - left_encoder)
 
+        # get the angle between GEARS and the left wall
+        angle = self.get_alignment()
+
+        if (time() - self.last_alignment) > 3 and angle != -1:
+            self.orientation_correction = angle
+            self.last_alignment = time()
+
+        self.orientation = self.turning_constant * (right_encoder - left_encoder) + self.orientation_correction
+
+    # Mark the current position of GEARs on the map
     # Mark the current position of GEARs on the map
     def update_map(self, x_coordinate, y_coordinate, mark):
         row, col = self.coordinates_to_indices(x_coordinate, y_coordinate)
@@ -462,22 +494,22 @@ class Gears(BrickPi3):
         # Replace previous gears or target with path
         replace_list = [GEARS, TARGET]
         if mark in replace_list:
-
             # Replace previous mark with path mark
             self.map[self.map == mark] = PATH
 
-        # Do not overwrite the origin, walls, or hazards
-        safe_list = [ORIGIN, WALL, HEAT, MAGNET]
+        # Do not overwrite the origin, path, heat sources, magnetic sources, or barriers
+        safe_list = [ORIGIN, PATH, HEAT, MAGNET, BARRIER]
         if self.map[row][col] in safe_list:
             return
 
         # If placing a clear mark
         if mark == CLEAR:
-            # If the target point is not marked unknown
-            if self.map[row][col] != UNKNOWN:
+            # Only walls and unknown points can be marked as clear
+            if not (self.map[row][col] == WALL or self.map[row][col] == UNKNOWN):
                 # Do not overwrite that mark
                 return
 
+        # place the mark on the map
         self.map[row][col] = mark
 
     # Display a polished map output
@@ -509,6 +541,8 @@ class Gears(BrickPi3):
                     color = PURPLE
                 elif char == HEAT:
                     color = ORANGE
+                elif char == MAGNET:
+                    color = PINK
                 elif coordinates in self.path:
                     color = YELLOW
                 else:
@@ -596,19 +630,38 @@ class Gears(BrickPi3):
         num_rows, num_cols = self.map.shape
         graph = grid_graph(num_rows, num_cols)
 
-        # Get the indices of walls of the map
-        walls = np.array(np.where(self.map == WALL)).T
+        # Get the indices of heat sources of the map
         heat_sources = np.array(np.where(self.map == HEAT)).T
+        magnets = np.array(np.where(self.map == MAGNET)).T
+
+        wall_edges = []
+        for (x1, y1), (x2, y2) in self.walls:
+
+            # convert coordinates to map indices
+            row1, col1 = self.coordinates_to_indices(x1, y1)
+            row2, col2 = self.coordinates_to_indices(x2, y2)
+
+            # map indices to nodes
+            node1 = indices_to_node(row1, col1, num_rows)
+            node2 = indices_to_node(row2, col2, num_rows)
+
+            # get the index for each node in the graph
+            i = node_to_index(node1[0], node1[1], num_cols)
+            j = node_to_index(node2[0], node2[1], num_cols)
+            wall_edges.append((i, j))
 
         # convert indices to nodes
-        wall_nodes = [indices_to_node(row, col, num_rows) for row, col in walls]
         heat_nodes = [indices_to_node(row, col, num_rows) for row, col in heat_sources]
+        magnet_nodes = [indices_to_node(row, col, num_rows) for row, col in magnets]
 
         # remove the walls from the graph
-        graph = remove_nodes(graph, wall_nodes, num_cols)
+        graph = remove_edges(graph, wall_edges)
 
         # remove the heat sources from the graph
         graph = remove_nodes(graph, heat_nodes, num_cols)
+
+        # remove the magnets sources from the graph
+        graph = remove_nodes(graph, magnet_nodes, num_cols)
 
         return graph
 
@@ -638,9 +691,10 @@ class Gears(BrickPi3):
         source_node = indices_to_node(self.row, self.col, num_rows)
 
         # Get indices of all known points
-        # Clear marks are considered unknown
+        # Clear marks and walls are considered unknown
         map_copy = self.map.copy()
         map_copy[self.map == CLEAR] = UNKNOWN
+        map_copy[self.map == WALL] = UNKNOWN
         known_indices = np.array(np.where(self.map != UNKNOWN)).T
         known_nodes = [indices_to_node(row, col, num_rows) for row, col in known_indices]
 
@@ -777,7 +831,7 @@ class Gears(BrickPi3):
             np.isclose(self.y_coordinate, y_coordinate, 0, tolerance)
 
     def check_finished(self):
-
+        self.update_position()
         # create a copy of the map
         map_copy = self.map.copy()
 
@@ -888,7 +942,6 @@ class Gears(BrickPi3):
     # Main logic for the rover during the primary demonstration
     # Later method calls have higher priority
     def run(self):
-
         # Check that a valid mode is selected
         if self.mode not in self.mode_list:
             print('Unknown mode. Switching to auto')
@@ -946,12 +999,12 @@ class Gears(BrickPi3):
                 self.update_lead()  # move the lead to the next coordinate on the path
                 self.follow_lead()  # move GEARS to the lead
 
-                if self.check_finished():
-                    self.stop()
-                    self.open_gate()
+                # if self.check_finished():
+                #     self.stop()
+                #     self.open_gate()
 
-                if self.get_motor_encoder(self.gate) == -70:
-                    self.stop()
+                # if self.get_motor_encoder(self.gate) == -70:
+                #     self.stop()
 
             # Task 1 and Integration Task 1/2
             elif self.mode == 'walls':

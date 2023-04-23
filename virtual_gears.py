@@ -61,6 +61,7 @@ class VirtualGears:
                                              'Parameter',
                                              'Resource X Coordinate',
                                              'Resource Y Coordinate'])
+        self.walls = []
 
         # ADDITIONAL ATTRIBUTES
         self.on = False  # Is GEARS on?
@@ -146,6 +147,8 @@ class VirtualGears:
 
         x, y = self.get_neighbor_coordinates(direction)
         self.update_map(x, y, WALL)
+        self.update_position()
+        self.walls.append(((self.x_coordinate, self.y_coordinate), (x, y)))
 
     def get_mark(self, x_coordinate, y_coordinate):
         row, col = self.coordinates_to_indices(x_coordinate, y_coordinate)
@@ -198,16 +201,19 @@ class VirtualGears:
         # Otherwise, mark the tile as clear
         if front_distance < self.tile_width / 2:
             self.update_map(front_x, front_y, WALL)
+            self.walls.append(((self.x_coordinate, self.y_coordinate), (front_x, front_y)))
         else:
             self.update_map(front_x, front_y, CLEAR)
 
         if left_distance < self.tile_width / 2:
             self.update_map(left_x, left_y, WALL)
+            self.walls.append(((self.x_coordinate, self.y_coordinate), (left_x, left_y)))
         else:
             self.update_map(left_x, left_y, CLEAR)
 
         if right_distance < self.tile_width / 2:
             self.update_map(right_x, right_y, WALL)
+            self.walls.append(((self.x_coordinate, self.y_coordinate), (right_x, right_y)))
         else:
             self.update_map(right_x, right_y, CLEAR)
 
@@ -356,14 +362,14 @@ class VirtualGears:
             self.map[self.map == mark] = PATH
 
         # Do not overwrite the origin or walls
-        safe_list = [ORIGIN, WALL]
+        safe_list = [ORIGIN, HEAT, MAGNET]
         if self.map[row][col] in safe_list:
             return
 
         # If placing a clear mark
         if mark == CLEAR:
-            # If the target tile is not marked unknown
-            if self.map[row][col] != UNKNOWN:
+            # Only walls and unknown points can be marked as clear
+            if not (self.map[row][col] == WALL or self.map[row][col] == UNKNOWN):
                 # Do not overwrite that mark
                 return
 
@@ -472,6 +478,7 @@ class VirtualGears:
         self.heading = degrees
         self.turning = turn
 
+    # construct a graph to represent the map
     def construct_graph(self):
 
         # update position to ensure GEARS row and column values are correct
@@ -481,14 +488,35 @@ class VirtualGears:
         num_rows, num_cols = self.map.shape
         graph = grid_graph(num_rows, num_cols)
 
-        # Get the indices of walls of the map
-        walls = np.array(np.where(self.map == WALL)).T
+        # Get the indices of heat sources of the map
+        heat_sources = np.array(np.where(self.map == HEAT)).T
+
+        wall_edges = []
+
+        # for each pair of points with walls in between them
+        for (x1, y1), (x2, y2) in self.walls:
+
+            # convert coordinates to map indices
+            row1, col1 = self.coordinates_to_indices(x1, y1)
+            row2, col2 = self.coordinates_to_indices(x2, y2)
+
+            # convert map indices to nodes
+            node1 = indices_to_node(row1, col1, num_rows)
+            node2 = indices_to_node(row2, col2, num_rows)
+
+            # get the index for each node in the graph
+            i = node_to_index(node1[0], node1[1], num_cols)
+            j = node_to_index(node2[0], node2[1], num_cols)
+            wall_edges.append((i, j))
 
         # convert indices to nodes
-        wall_nodes = [indices_to_node(row, col, num_rows) for row, col in walls]
+        heat_nodes = [indices_to_node(row, col, num_rows) for row, col in heat_sources]
 
         # remove the walls from the graph
-        graph = remove_nodes(graph, wall_nodes, num_cols)
+        graph = remove_edges(graph, wall_edges)
+
+        # remove the heat sources from the graph
+        graph = remove_nodes(graph, heat_nodes, num_cols)
 
         return graph
 
@@ -532,9 +560,10 @@ class VirtualGears:
         source_node = indices_to_node(self.row, self.col, num_rows)
 
         # Get indices of all known points
-        # Clear marks are considered unknown
+        # Clear marks and walls are considered unknown
         map_copy = self.map.copy()
         map_copy[self.map == CLEAR] = UNKNOWN
+        map_copy[self.map == WALL] = UNKNOWN
         known_indices = np.array(np.where(map_copy != UNKNOWN)).T
         known_nodes = [indices_to_node(row, col, num_rows) for row, col in known_indices]
 

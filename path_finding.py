@@ -106,6 +106,31 @@ def remove_nodes(graph, node_list, num_cols):
     return graph
 
 
+# each edge is represented by a pair of node indices (i, j)
+# setting arr[i][j] and arr[j][i] to infinity removes the edge from the graph
+def remove_edges(graph, edges):
+    arr = graph.toarray()  # get edge array for graph
+
+    # for each node to be removed
+    for i, j in edges:
+
+        # if i and j represent the same node, there is no edge to remove
+        # the distance between a node and itself is 0
+        if i == j:
+            arr[i][j] = 0
+            arr[j][i] = 0
+
+        # if i and j represent different nodes
+        # remove the edge between them
+        else:
+            arr[i][j] = np.inf
+            arr[j][i] = np.inf
+
+    # turn the modified edge array back into a graph
+    graph = csr_matrix(arr)
+    return graph
+
+
 # find the unknown node with the shortest distance from the source
 def find_nearest_unknown(graph, source, num_cols, known_nodes):
     start_index = node_to_index(source[0], source[1], num_cols)
