@@ -8,6 +8,7 @@ UNKNOWN = 'U'
 HEAT = 'H'
 MAGNET = 'M'
 EXIT = 'E'
+BARRIER = 'B'
 
 FRONT = 0
 LEFT = 90
@@ -23,3 +24,4 @@ PURPLE = '\033[35m'
 CYAN = '\033[36m'
 LIGHT_GREY = '\033[37m'
 YELLOW = '\033[93m'
+PINK = '\033[95m'
