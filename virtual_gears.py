@@ -690,13 +690,36 @@ class VirtualGears:
         # correct direction
         self.move_forward()
 
-    #  Return True if the path runs into a wall. Else return false
+    # check if the path is blocked
     def check_path_blocked(self):
-        for x, y in self.path:  # for each coordinate pair in the path
-            mark = self.get_mark(x, y)  # get the mark at that coordinate
-            if mark == WALL:  # if the mark is a wall
+
+        # for each point in the path
+        for x, y in self.path:
+
+            # get the map indices
+            row, col = self.coordinates_to_indices(x, y)
+
+            # get the mark on the map
+            mark = self.map[row][col]
+
+            # if the mark is a magnetic or heat source
+            if mark == WALL or mark == HEAT or mark == MAGNET:
+                # the path is blocked
                 return True
-        return False  # if none of the marks in the path are walls
+
+        # for each pair of points in the walls list
+        # for point1, point2 in self.walls:
+        #
+        #     # if one of the points is in the path
+        #     if point1 in self.path and point2 in self.path:
+        #         # get the index of that point in the path
+        #         index1 = self.path.index(point1)
+        #         index2 = self.path.index(point2)
+        #
+        #         return abs(index1 - index2) == 1
+
+        # otherwise, the path is not blocked
+        return False
 
     # Determine if GEARS is near (x_coordinate, y_coordinate) within a certain tolerance
     def near(self, x_coordinate, y_coordinate, tolerance):
